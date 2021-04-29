@@ -41,8 +41,8 @@ a = 0.9
 b = 0.1
 cc = 0.7
 dd = 0.3
-fn = 0
-fp = 0
+fn = 0.02
+fp = 0.04
 p_inf0 = 0.1
 p_rec0 = 0.01
 gamma_ = 0.3
@@ -71,8 +71,8 @@ vaccine_policy = vac_policies.risk_greedy
 vac_tuner = 'riskCFA'
 test_policy = test_policies.null_policy
 
-param0 = np.arange(0.05,0.95,0.1)
-param1 = np.arange(0.05,0.95,0.1)
+param0 = np.arange(0.05, 0.1, 0.05)
+param1 = np.arange(0.05, 0.95, 0.05)
 
 parameterlist = np.vstack(np.meshgrid(param0,param1)).reshape(2,len(param0)*len(param1)).T
 Fl = []
