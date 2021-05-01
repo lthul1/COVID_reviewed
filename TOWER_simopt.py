@@ -13,7 +13,7 @@ import cost_object
 
 # n = number of samples paths to simulation
 n = 1
-
+print(np.random.rand())
 # list of hyperparameters
 # hyperparameters[0] - nc = number of zones
 # hyperparameters[1] - T = time horizon
@@ -33,21 +33,22 @@ n = 1
 # hyperparameters[15] - bw = mobility bandwidth
 # hyperparameters[16] - locs = locations of each zone
 # hyperparameters[17] - bw_approx - initial controller approximated bandwidth
-nc = 18
+nc = 25
 T = 20
 xi = 1
-lz = 0.4
+lz = 0.3
 a = 0.9
 b = 0.1
 cc = 0.7
 dd = 0.3
-fn = 0
-fp = 0
+fn = 0.01
+fp = 0.02
 p_inf0 = 0.1
 p_rec0 = 0.01
 gamma_ = 0.3
 alpha_ = 0.8
 N = gen_N(nc)
+print(np.random.rand())
 bw = 0.2
 locs = gen_locs(nc)
 bw_approx = 0.2
@@ -57,7 +58,7 @@ FLOW = np.min(
 	[0.8 * np.ones(FLOW.shape), np.max([0.001 * np.ones(FLOW.shape), FLOW], axis=0)],
 	axis=0)
 np.fill_diagonal(FLOW, 0)
-
+print(np.random.rand())
 hyperparameters = [nc,T,xi,lz,a,b,cc,dd,fn,fp,p_inf0,p_rec0,gamma_,alpha_,N,bw,locs,bw_approx,FLOW]
 
 # initialize process classes
@@ -69,63 +70,98 @@ test_fun = test_proc.const
 
 vaccine_policy = vac_policies.risk_greedy
 vac_tuner = 'riskCFA'
-test_policy = test_policies.null_policy
-thetaDLA = 0.7
-tunable0 = np.array([lz, thetaDLA])
+test_policy = test_policies.pure_exploration
 
-K = 50
+thetaPFA0 = 0.5
+tunable0 = np.array([thetaPFA0])
+
+K = 100
+L=2
 hh = 1
-eta = np.arange(1,K+1)
-eta = np.max([0.01 * np.ones(eta.shape), hh/(eta+hh)], axis=0)
-
+kk = np.arange(1,K+1)
+gamma = 0.101
+c = .1
+# eta = np.max([0.01 * np.ones(eta.shape), hh/(eta+hh)], axis=0)
+ck = c/(kk)**gamma
 tunable1 = tunable0.copy()
-grad_squared = 0
-lr = 0.8
+tune_t = tunable1.copy()
+mt = 0
+vt = 0
+b1 = 0.8
+b2 = 0.99
+eps= 10e-8
+g2=0
+lr = 10
+
+et = 0.8
 tlist = [list(tunable1)]
 Fl = [0]
 print('tunable1 = ' + str(tunable1))
 for k in range(K):
 	print('###  k = '+str(k) + '  ####')
-	np.random.seed(np.random.randint(100))
-	betahat = gen_betas(nc, T, n)
-	Movers = gen_FLOW(nc, T, n, FLOW, N)
-	stochastics = [betahat[:, :, 0], vac_fun, test_fun, Movers]
-	tune_t = tunable1.copy()
-	vk = np.random.normal(size=tunable0.shape)
-	tune_t1 = tune_t + eta[k] * vk
-	boolt1 = tune_t1 <= 0
-	boolt2 = tune_t1 >= 1
-	tune_t1[boolt1] = 0.001
-	tune_t1[boolt2] = 1
-	hyperparameters_t = hyperparameters.copy()
-	hyperparameters_t1 = hyperparameters.copy()
-	hyperparameters_t[3] = tune_t[0]
-	hyperparameters_t1[3] = tune_t1[0]
-	tparams_t = []
-	tparams_t1 = []
-	vparams_t = [tune_t[1]]
-	vparams_t1 = [tune_t1[1]]
-	COt = run_sample_path(hyperparameters_t, stochastics, vaccine_policy, test_policy, vparams_t, tparams_t)
-	COt1 = run_sample_path(hyperparameters_t1, stochastics, vaccine_policy, test_policy, vparams_t1, tparams_t1)
+	dG = np.zeros(tunable1.shape[0])
+	dF = 0
+	vk = np.random.rand(tunable1.shape[0])
+	hk = 2 * np.int32(vk > 0.5) - 1
 
-	ct = COt.inst_list
-	ct1 = COt1.inst_list
+	print('hk = ' +str(hk))
+	for m in range(L):
+		tune_t = tunable1.copy()
+		np.random.seed(np.random.randint(100))
+		betahat = gen_betas(nc, T, n)
+		Movers = gen_FLOW(nc, T, n, FLOW, N)
+		stochastics = [betahat[:, :, 0], vac_fun, test_fun, Movers]
+		tune_tn1 = tune_t - ck[k] * hk
+		tune_t1 = tune_t + ck[k] * hk
+		boolt1 = tune_t1 <= 0
+		boolt2 = tune_t1 >= 1
+		tune_t1[boolt1] = 0.001
+		tune_t1[boolt2] = 1
+		booltn1 = tune_tn1 <= 0
+		booltn2 = tune_tn1 >= 1
+		tune_tn1[booltn1] = 0.001
+		tune_tn1[booltn2] = 1
+		hyperparameters_tn1 = hyperparameters.copy()
+		hyperparameters_t1 = hyperparameters.copy()
 
-	cumulativet = np.cumsum(ct)
-	summation_meant = np.cumsum(cumulativet)
+		tparams_tn1 = []
+		tparams_t1 = []
+		vparams_tn1 = [tune_tn1[0]]
+		vparams_t1 = [tune_t1[0]]
+		COtn1 = run_sample_path(hyperparameters_tn1, stochastics, vaccine_policy, test_policy, vparams_tn1, tparams_tn1)
+		COt1 = run_sample_path(hyperparameters_t1, stochastics, vaccine_policy, test_policy, vparams_t1, tparams_t1)
 
-	cumulativet1 = np.cumsum(ct1)
-	summation_meant1 = np.cumsum(cumulativet1)
+		ctn1 = COtn1.inst_list
+		ct1 = COt1.inst_list
 
-	Ft = summation_meant[T-1]
-	Ft1 = summation_meant1[T-1]
+		cumulativetn1 = np.cumsum(ctn1)
+		summation_meantn1 = np.cumsum(cumulativetn1)
 
-	G = (Ft1 - Ft)/eta[k] * vk
-	print('G = ' + str(G))
-	print('Ft = ' + str(Ft))
-	grad_squared = 0.9 * grad_squared + 0.1 * G * G
-	alpha = np.max([1e-6 * np.ones(grad_squared.shape), lr/grad_squared], axis=0)
-	tunable1 = tune_t - alpha * G
+		cumulativet1 = np.cumsum(ct1)
+		summation_meant1 = np.cumsum(cumulativet1)
+
+		Ftn1 = summation_meantn1[T-1]
+		Ft1 = summation_meant1[T-1]
+
+		G = (Ft1 - Ftn1)/(2*ck[k]) * hk
+
+		dG += G
+		dF += Ft1
+	dG /= L
+	dF /= L
+	print('G = ' + str(dG))
+	print('Ft = ' + str(dF))
+	grad_squared = dG * dG
+	mt = b1 * mt + (1-b1)*dG
+	vt = b2 * vt + (1-b2)*grad_squared
+	mhat = mt/(1-b1**(k+1))
+	vhat = vt/(1-b2**(k+1))
+	# g2 = 0.9 * g2 + 0.1 * dG *dG
+	# alpha = et/g2
+	# alphaG = np.min([0.1*np.ones(g2.shape), alpha * dG], axis=0)
+	alpha = lr / grad_squared
+	alphaG = alpha * dG
+	tunable1 = tune_t - alphaG
 
 	#project back into parameter space
 	bool1 = tunable1 <= 0
@@ -134,9 +170,21 @@ for k in range(K):
 	tunable1[bool2] = 1
 	print('tunable1 = ' + str(tunable1))
 	print('alpha = ' + str(alpha))
-	print('eta = ' + str(eta[k]))
+	print('mhat = ' + str(mhat))
+	print('vhat = ' + str(vhat))
+	print('ck = ' + str(ck[k]))
 	tlist.append(list(tunable1))
 
+	hyperparameters_test = hyperparameters.copy()
+	tparams_test = []
+	vparams_test = [tunable1[0]]
+	COtest = run_sample_path(hyperparameters_test, stochastics, vaccine_policy, test_policy, vparams_test, tparams_test)
+
+	ctest = COtest.inst_list
+
+	cumulativetest = np.cumsum(ctest)
+	summation_meantest = np.cumsum(cumulativetest)
+	dFtest = summation_meantest[T-1]
 	# samples = 5
 	# betahat = gen_betas(nc, T, samples)
 	# clist = []
@@ -152,14 +200,21 @@ for k in range(K):
 	# cumulative_eval = np.cumsum(clist, axis=1)
 	# cumulative_mean_eval = np.mean(cumulative_eval, axis=0)
 	# summation_eval = np.cumsum(cumulative_mean_eval)
-	Fl.append(Ft)
+	Fl.append(dFtest)
 
 now = datetime.now()
 
-current_time = now.strftime("%H:%M:%S")
-dl.save_data(tlist, 'tuning_data/params_'+str(vac_tuner)+'_'+str(current_time)+'_.obj')
-dl.save_data(Fl, 'tuning_data/costs_'+str(vac_tuner)+'_'+str(current_time)+'_.obj')
+current_time = now.strftime("%H,%M,%S")
+dl.save_data(tlist, 'tuning_data/params_'+str(vac_tuner)+'_'+str(current_time)+'.obj')
+dl.save_data(Fl, 'tuning_data/costs_'+str(vac_tuner)+'_'+str(current_time)+'.obj')
+fig, ax = plt.subplots(1,2)
+pl = np.array(tlist)
+ax[0].plot(pl[:,0])
+# ax[0].plot(pl[:,1])
+# ax[0].plot(pl[:,2])
+ax[1].plot(Fl[1:])
 
+plt.show()
 
 
 

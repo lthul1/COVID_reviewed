@@ -94,6 +94,10 @@ class simulator_model:
 		else:
 			Mhat = Movers / np.dot(Movers, np.ones(self.nc))
 
+		# Movers = np.zeros(Movers.shape)
+
+
+
 		beta = self.betahat
 		gamma = self.gamma_
 

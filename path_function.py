@@ -12,7 +12,7 @@ def run_sample_path(hyperparameters, stochastics, vac_policy, test_policy, vpara
 	vac_fun = stochastics[1]
 	test_fun = stochastics[2]
 
-	I = hyperparameters[10] * N
+	I = hyperparameters[10] * N * stochastics[4]
 	R = hyperparameters[11] * N
 	# true number of initial susceptibles
 	S = N - I - R
@@ -37,7 +37,7 @@ def run_sample_path(hyperparameters, stochastics, vac_policy, test_policy, vpara
 
 	state = {'pS': pS, 'pI': pI, 'pR': pR, 'N': N, 'nc': nc, 'beta': stochastics[0][:, 0], 'gamma': hyperparameters[12],
 	         'nvac': vac_fun(0), 'ntest': test_fun(0), 't': 0, 'lz': hyperparameters[3],
-	         'bw_approx': hyperparameters[17], 'locs': hyperparameters[16]}
+	         'bw_approx': hyperparameters[17], 'locs': hyperparameters[16], 'xi': hyperparameters[2]}
 	controller_funs = [sim.obs_fun]
 	model = controller(state, controller_funs)
 

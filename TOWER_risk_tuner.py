@@ -33,16 +33,16 @@ n = 1
 # hyperparameters[15] - bw = mobility bandwidth
 # hyperparameters[16] - locs = locations of each zone
 # hyperparameters[17] - bw_approx - initial controller approximated bandwidth
-nc = 18
-T = 20
-xi = 1
+nc = 25
+T = 25
+xi = 0.8
 lz = 0.4
 a = 0.9
 b = 0.1
 cc = 0.7
 dd = 0.3
-fn = 0.02
-fp = 0.04
+fn = 0
+fp = 0
 p_inf0 = 0.1
 p_rec0 = 0.01
 gamma_ = 0.3
@@ -67,44 +67,89 @@ test_proc = test_process(nc, T)
 vac_fun = vac_proc.stoch
 test_fun = test_proc.const
 
-vaccine_policy = vac_policies.risk_greedy
-vac_tuner = 'riskCFA'
-test_policy = test_policies.null_policy
+vaccine_policy = vac_policies.risk_DLA_prime
+vac_tuner = 'nonlinear'
+test_policy = test_policies.REMBO_EI
 
-param0 = np.arange(0.05, 0.1, 0.05)
-param1 = np.arange(0.05, 0.95, 0.05)
+param0 = np.arange(0.05, 0.95, .05)
+param1 = np.arange(2,3,1)
+
 
 parameterlist = np.vstack(np.meshgrid(param0,param1)).reshape(2,len(param0)*len(param1)).T
 Fl = []
+Fl_mean = []
+Fl_std = []
+samples = 6
+cc = np.random.randint(100, size= samples)
 for k in range(parameterlist.shape[0]):
 	print('###  k = '+str(k) + ' of '+str(parameterlist.shape[0]) +'  ####')
-	samples = 5
 	betahat = gen_betas(nc, T, samples)
 	clist = []
 	for i in range(samples):
+		np.random.seed(cc[i])
 		Movers = gen_FLOW(nc, T, n, FLOW, N)
 		stochastics = [betahat[:, :, i], vac_fun, test_fun, Movers]
 		tune_eval = parameterlist[k,:]
 		hyperparameters_eval = hyperparameters.copy()
-		hyperparameters_eval[3] = tune_eval[0]
-		tparams_eval = []
-		vparams_eval = [tune_eval[1]]
+		hyperparameters_eval[3] = 0.2
+		tparams_eval = [tune_eval[1]]
+		vparams_eval = [tune_eval[0]]
 		COeval = run_sample_path(hyperparameters_eval, stochastics, vaccine_policy, test_policy, vparams_eval, tparams_eval)
 		clist.append(COeval.inst_list)
 	cumulative_eval = np.cumsum(clist, axis=1)
 	cumulative_mean_eval = np.mean(cumulative_eval, axis=0)
 	summation_eval = np.cumsum(cumulative_mean_eval)
+
+	summation_eval_samp = np.cumsum(cumulative_eval, axis=1)
+	summation_eval_mean = np.mean(summation_eval_samp, axis=0)
+	summation_eval_std = np.std(summation_eval_samp, axis=0)
+
 	Fl.append(summation_eval[T-1])
+	Fl_mean.append(summation_eval_mean[T - 1])
+	Fl_std.append(summation_eval_std[T - 1])
 
 now = datetime.now()
 
-current_time = now.strftime("%H:%M:%S")
-dl.save_data(parameterlist, 'tuning_data/params_'+str(vac_tuner)+'_'+str(current_time)+'_.obj')
-dl.save_data(Fl, 'tuning_data/costs_'+str(vac_tuner)+'_'+str(current_time)+'_.obj')
+current_time = now.strftime("%H,%M,%S")
+dl.save_data(parameterlist, 'tuning_data/params_'+str(vac_tuner)+'_'+str(current_time)+'.obj')
+dl.save_data(Fl, 'tuning_data/costs_'+str(vac_tuner)+'_'+str(current_time)+'.obj')
+dl.save_data(Fl_mean, 'tuning_data/mcosts_'+str(vac_tuner)+'_'+str(current_time)+'.obj')
+dl.save_data(Fl_std, 'tuning_data/scosts_'+str(vac_tuner)+'_'+str(current_time)+'.obj')
 
+ids0 = {param0[i]:i for i in range(len(param0))}
+ids1 = {param1[i]:i for i in range(len(param1))}
 
+M = np.zeros([len(param0), len(param1)])
+M1 = np.zeros([len(param0), len(param1)])
+M2 = np.zeros([len(param0), len(param1)])
+pdata = parameterlist
 
+costs = Fl
+mcosts = Fl_mean
+scosts = Fl_std
+counter = 0
+for i in range(M.shape[0]):
+    for j in range(M.shape[1]):
+        ci = ids0[pdata[counter,:][0]]
+        cj = ids1[pdata[counter, :][1]]
 
-
+        M[ci,cj] = costs[counter]
+        M1[ci, cj] = mcosts[counter]
+        M2[ci, cj] = scosts[counter]
+        counter+=1
+pflag = True
+if pflag:
+    fig,ax = plt.subplots(1,3)
+    ax[0].imshow(M, origin='lower')
+    ax[1].imshow(M1, origin='lower')
+    ax[2].imshow(M2, origin='lower')
+# plt.plot(M.flatten())
+else:
+    ax = plt.axes(projection='3d')
+    X,Y = np.meshgrid(param0, param1)
+    ax.plot_surface(X,Y,M1)
+fig2,ax2 = plt.subplots(1,1)
+ax2.plot(Fl)
+plt.show()
 
 

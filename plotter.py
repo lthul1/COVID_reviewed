@@ -2,18 +2,20 @@ import numpy as np
 import data_loader as dl
 import matplotlib.pyplot as plt
 
-costs = dl.load_data('data/COdata_1_3_1619528900.406901_.obj')
-parameter_list = dl.load_data('data/params_1_3_1619528900.409087_.obj')
+time = '1_25_11,25,31'
 
-vac_names = parameter_list[20]
-test_names = parameter_list[21]
+costs = dl.load_data('data/COdata_'+ str(time)+'.obj')
+parameter_list = dl.load_data('data/params_'+ str(time)+'.obj')
+
+vac_names = parameter_list[21]
+test_names = parameter_list[22]
 N = parameter_list[14]
 T = parameter_list[1]
 co = ['k', 'r', 'b', 'g', 'm', 'c', 'y', 'grey', 'indigo', 'lightsteelblue', 'purple', 'teal', 'olive', 'pink', 'honeydew', 'plum', 'darkturquoise', 'navy', 'slategrey', 'aquamarine']
 
 
 fig, ax = plt.subplots(1,2)
-fig.set_size_inches(18.5, 10.5)
+fig.set_size_inches(14.5, 8.5)
 legend = []
 counter = 0
 Ntot = np.sum(N) * np.ones(T)

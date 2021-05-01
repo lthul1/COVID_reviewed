@@ -170,8 +170,8 @@ class EI:
 		m = gp.Model("qp")
 		x = m.addMVar(nc, vtype=GRB.INTEGER, name="x")
 		pbarI1 = Ibar1/N
-		Az = np.diag(pbarI1 * (1-pbarI1))
-		c = np.dot(Az,N)
+		Az = np.diag((N**2 * pbarI1 * (1-pbarI1)) /(lz * N + 1))
+		c = (lz*N**3 * pbarI1 * (1-pbarI1)) /(lz * N + 1)
 		m.setParam('OutputFlag', 0)
 		m.setObjective(x @ Az @ x + c @ x, GRB.MAXIMIZE)
 

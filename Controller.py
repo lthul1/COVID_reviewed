@@ -73,7 +73,10 @@ class controller:
 			print('ISNN')
 
 		# project the other dimensions back onto it
-		sv = np.array([simplex_projector(np.array([Sbar1[i]/N[i], Rbar1[i]/N[i]]), const=p_inf[i]) for i in range(self.nc)])
+		# sv = np.array([simplex_projector(np.array([Sbar1[i]/N[i], Rbar1[i]/N[i]]), const=p_inf[i]) for i in range(self.nc)])
+
+		sv = np.array(
+			[proj(np.array([Sbar1[i] / N[i], Rbar1[i] / N[i]]), const=p_inf[i]) for i in range(self.nc)])
 		self.state['pS'] = sv[:,0]
 		self.state['pR'] = sv[:,1]
 		self.state['pI'] = p_inf

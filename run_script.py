@@ -30,7 +30,7 @@ n = 1
 # hyperparameters[15] - bw = mobility bandwidth
 # hyperparameters[16] - locs = locations of each zone
 # hyperparameters[17] - bw_approx - initial controller approximated bandwidth
-nc = 20
+nc = 18
 T = 30
 xi = 1
 lz = 0.3
@@ -48,8 +48,15 @@ N = gen_N(nc)
 bw = 0.2
 locs = gen_locs(nc)
 bw_approx = 0.2
+FLOW = np.exp(-0.5 * pdist(locs / bw, 'sqeuclidean'))
+FLOW = squareform(FLOW)
+FLOW = np.min(
+	[0.8 * np.ones(FLOW.shape), np.max([0.001 * np.ones(FLOW.shape), FLOW], axis=0)],
+	axis=0)
+np.fill_diagonal(FLOW, 0)
 
-hyperparameters = [nc,T,xi,lz,a,b,cc,dd,fn,fp,p_inf0,p_rec0,gamma_,alpha_,N,bw,locs,bw_approx]
+
+hyperparameters = [nc,T,xi,lz,a,b,cc,dd,fn,fp,p_inf0,p_rec0,gamma_,alpha_,N,bw,locs,bw_approx, FLOW]
 
 
 # initialize process classes
@@ -64,22 +71,22 @@ test_fun = test_proc.const
 
 
 # list of vaccine policies
-vaccine_policies = [vac_policies.risk_greedy]
+vaccine_policies = [vac_policies.susc_allocate]
 mv = len(vaccine_policies)
 vac_names = ['risk']
 # vparams0 is null policy params
 vparams0 = []
 vparams1 = [50,10]
 vparams2 = []
-vparams3 = [1]
+vparams3 = [0.3]
 vparams4 = [0.15, 0.3]
 
-vparam_list = [vparams3]
+vparam_list = [vparams1]
 
 # list of testing policies
-testing_policies = [test_policies.pure_exploration]
+testing_policies = [test_policies.EI]
 mt = len(testing_policies)
-test_names = ['explore']
+test_names = ['ei']
 #tparams0 is null policy params
 tparams0 = []
 tparams1 = [10]
@@ -100,7 +107,8 @@ for i in range(mt):
 			# stochastics[1] = vac_fun - vaccine production function
 			# stochastics[2] = test_fun - test kit production function
 			print('Vaccine Policy: '+str(vac_names[j]))
-			stochastics = [betahat[:,:,k], vac_fun, test_fun]
+			Movers = gen_FLOW(nc, T, n, FLOW, N)
+			stochastics = [betahat[:, :, i], vac_fun, test_fun, Movers]
 			costs = run_sample_path(hyperparameters, stochastics, vaccine_policies[j], testing_policies[i], vparam_list[j], tparam_list[i])
 			COlist[i][j].append(costs.inst_list)
 
