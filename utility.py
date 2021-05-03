@@ -31,7 +31,7 @@ def gen_USA_betas(nc,T,n):
 	# stock betas
 	a = np.random.uniform(low=-0.01, high=0.01, size=[nc,T,n])
 	beta_ = dl.load_data('USA_DATA/state_beta.obj')
-	betahat = beta_ + a
+	betahat = beta_[:,None,None] + a
 	betahat = np.min([0.95 * np.ones([nc,T,n]), np.max([0.5 * np.ones([nc,T,n]), betahat], axis=0)], axis=0)
 	return betahat
 
@@ -254,7 +254,7 @@ class tracker:
 		ax[2].plot(np.cumsum(dIs[:,z]))
 
 
-def USA_plot(In, T):
+def USA_plot(costs, T):
 	colorscale = ["#f7fbff", "#ebf3fb", "#deebf7", "#d2e3f3", "#c6dbef", "#b3d2e9", "#9ecae1",
 				  "#85bcdb", "#6baed6", "#57a0ce", "#4292c6", "#3082be", "#2171b5", "#1361a9",
 				  "#08519c", "#0b4083", "#08306b"
@@ -278,7 +278,7 @@ def USA_plot(In, T):
 	# ik = np.max([np.zeros(ik.shape), np.log10(ik)], axis=0)
 	# ik[8,:] = np.log10(np.max(I))
 	# # ik[39,:] = np.max([0, np.log10(np.min(I))])
-	In = np.max([np.zeros(In.shape), np.log10(In)], axis=0)
+	In = np.max([np.zeros(costs.shape), np.log10(costs)], axis=0)
 	plotmap = True
 	if plotmap:
 		data_slider = []
@@ -307,7 +307,7 @@ def USA_plot(In, T):
 				colorscale="YlOrRd",
 				locationmode='USA-states',
 				zmin=3,
-				zmax=1.3 * np.log10(np.max(I))
+				zmax=1.3 * np.log10(np.max(costs))
 				# autocolorscale=True
 			)
 
@@ -327,6 +327,6 @@ def USA_plot(In, T):
 													projection={'type': 'albers usa'}),
 					  sliders=sliders)
 
-		fig = dict(data=data_slider, layout=layout)
+		fig2 = dict(data=data_slider, layout=layout)
 		# fig = dict(data=data_slider)
-		offline.plot(fig)
+		offline.plot(fig2)

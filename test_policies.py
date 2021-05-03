@@ -128,7 +128,7 @@ class EI:
 		ntest = self.model.state['ntest']
 		state1 = self.model.state.copy()
 
-		N = self.model.state['N']
+		N = np.float32(self.model.state['N'])
 		pS = self.model.state['pS']
 		pI = self.model.state['pI']
 		pR = self.model.state['pR']
@@ -158,7 +158,7 @@ class EI:
 		sigma_susc = np.sqrt(N * pS * (1 - pS) + eps)
 		ESx = (Sbar - xvac) * stats.norm.cdf((Sbar - xvac) / sigma_susc) + sigma_susc * stats.norm.pdf(
 			(Sbar - xvac) / sigma_susc)
-		Emin = ESx - Sbar
+		Emin = Sbar - ESx
 
 		# Get the predicted states at t+1
 		Sbar1 = ESx - term
@@ -172,6 +172,7 @@ class EI:
 		pbarI1 = Ibar1/N
 		Az = np.diag((N**2 * pbarI1 * (1-pbarI1)) /(lz * N + 1))
 		c = (lz*N**3 * pbarI1 * (1-pbarI1)) /(lz * N + 1)
+
 		m.setParam('OutputFlag', 0)
 		m.setObjective(x @ Az @ x + c @ x, GRB.MAXIMIZE)
 
@@ -238,7 +239,7 @@ class prop_greedy_trade:
 		sigma_susc = np.sqrt(N * pS * (1 - pS) + eps)
 		ESx = (Sbar - xvac) * stats.norm.cdf((Sbar - xvac) / sigma_susc) + sigma_susc * stats.norm.pdf(
 			(Sbar - xvac) / sigma_susc)
-		Emin = ESx - Sbar
+		Emin = Sbar - ESx
 
 		# Get the predicted states at t+1
 		Sbar1 = ESx - term
@@ -315,7 +316,7 @@ class REMBO_EI:
 		sigma_susc = np.sqrt(N * pS * (1 - pS) + eps)
 		ESx = (Sbar - xvac) * stats.norm.cdf((Sbar - xvac) / sigma_susc) + sigma_susc * stats.norm.pdf(
 			(Sbar - xvac) / sigma_susc)
-		Emin = ESx - Sbar
+		Emin = Sbar - ESx
 
 		# Get the predicted states at t+1
 		Sbar1 = ESx - term
@@ -431,7 +432,7 @@ class KG_grad:
 		sigma_susc = np.sqrt(N * pS * (1 - pS) + eps)
 		ESx = (Sbar - xvac) * stats.norm.cdf((Sbar - xvac) / sigma_susc) + sigma_susc * stats.norm.pdf(
 			(Sbar - xvac) / sigma_susc)
-		Emin = ESx - Sbar
+		Emin = Sbar - ESx
 
 		# Get the predicted states at t+1
 		Sbar1 = ESx - term
@@ -525,7 +526,7 @@ class REMBO_TS:
 			sigma_susc = np.sqrt(N * pS * (1 - pS) + eps)
 			ESx = (Sbar - xvac) * stats.norm.cdf((Sbar - xvac) / sigma_susc) + sigma_susc * stats.norm.pdf(
 				(Sbar - xvac) / sigma_susc)
-			Emin = ESx - Sbar
+			Emin = Sbar - ESx
 
 			# Get the predicted states at t+1
 			Sbar1 = ESx - term

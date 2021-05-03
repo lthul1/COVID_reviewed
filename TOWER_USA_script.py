@@ -56,7 +56,7 @@ p_rec0 = 0.01
 gamma_ = 0.3
 alpha_ = 0.8
 N = dl.load_data('USA_DATA/state_population.obj')
-N = np.array(N)
+N = np.float32(np.array(N))
 bw = 0.2
 locs = gen_locs(nc)
 bw_approx = 0.2
@@ -99,8 +99,8 @@ tparams2 = [2]
 tparams3 = [0.3]
 tparam_list = [tparams0, tparams2, tparams3]
 
-betahat = gen_betas(nc, T, n)
-rs = 0.667 * np.ones(n)
+betahat = gen_USA_betas(nc, T, n)
+rs = np.random.rand(n)
 COlist = [[[] for j in range(mv)] for i in range(mt)]
 for i in range(mt):
     for j in range(mv):
@@ -165,9 +165,11 @@ counter = 0
 Ntot = np.sum(N) * np.ones(T)
 S = []
 Ser = []
+Cumul_list = []
 for k in range(len(vac_names)):
     ts_res = []
     ts_err = []
+    ts_cumul = []
     for j in range(len(test_names)):
         cumulative_eval = np.cumsum(costs[j][k], axis=1)
 
@@ -175,12 +177,14 @@ for k in range(len(vac_names)):
         summation_eval_mean = np.mean(summation_eval_samp, axis=0)
         summation_eval_std = np.std(summation_eval_samp, axis=0)
         # ax[0].plot(instant_mean, co[counter])
+        ts_cumul.append(np.mean(cumulative_eval, axis=0))
         ts_res.append(summation_eval_mean[T-1])
         ts_err.append(summation_eval_std[T - 1])
         legend.append([vac_names[k] + ' + ' + test_names[j]])
         counter += 1
     S.append(ts_res)
     Ser.append(ts_err)
+    Cumul_list.append(ts_cumul)
 # ax[0].legend(legend)
 
 for k in range(len(vac_names)):
@@ -192,14 +196,11 @@ ax.set_xticklabels(test_names)
 Dvec = []
 Dvec.append(S)
 Dvec.append(Ser)
+Dvec.append(Cumul_list)
 now = datetime.now()
 
 current_time = now.strftime("%H,%M,%S")
 dl.save_data(parameter_list, 'data/paramlist_'+str(current_time)+'.obj')
 dl.save_data(Dvec, 'data/dataset_'+str(current_time)+'.obj')
-
-
-
-
 
 plt.show()

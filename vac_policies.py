@@ -886,7 +886,7 @@ class nonlinear_solve:
 		b2 = 0.99
 		eps = 10e-8
 		g2 = 0
-		lr = 15
+		lr = 5
 
 		et = 0.8
 		tlist = [list(xtune1)]
