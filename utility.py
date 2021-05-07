@@ -20,10 +20,16 @@ df = pd.read_csv("https://raw.githubusercontent.com/plotly/datasets/master/fips-
 def gen_betas(nc,T,n):
 	# this function takes number of counties as input and returns the mean beta values for each county
 	# stock betas
-	a = np.random.uniform(low=-0.01, high=0.01, size=[nc,T,n])
-	beta_ = np.random.uniform(low=0.5, high=0.6, size=[nc,T,n])
-	betahat = beta_ + a
-	betahat = np.min([0.95 * np.ones([nc,T,n]), np.max([0.5 * np.ones([nc,T,n]), betahat], axis=0)], axis=0)
+	deltabeta = 0.04
+	betaz = np.random.uniform(low=0.4, high=0.6, size = nc)
+	betahat = np.zeros([nc,T,n])
+	betahat[:,0,0] = betaz
+	for i in range(n):
+		for t in range(T-1):
+			a = np.random.uniform(low=-deltabeta, high=deltabeta, size=nc)
+			betahat[:,t+1,i] = betaz + a
+
+	betahat = np.min([0.95 * np.ones([nc,T,n]), np.max([0.05 * np.ones([nc,T,n]), betahat], axis=0)], axis=0)
 	return betahat
 
 def gen_USA_betas(nc,T,n):
@@ -90,24 +96,64 @@ class vaccine_process:
 	def __init__(self, nc, T):
 		c = 10
 		np.random.seed(c)
-		self.a = np.random.normal(25, 10, size=T)
+		self.a = np.random.normal(500, 100, size=T)
 		self.T = T
 		self.nc = nc
 		np.random.seed(None)
 
 	def stoch(self, t):
-		return np.int32(10 * self.nc * t + self.nc * self.a[t])
+		return np.int32(10 * self.nc * t + self.nc * self.a[t]/10)
+
+	def stoch2(self, t):
+		return np.int32(3 * self.nc * t + self.nc * self.a[t]/50)
 
 	def const(self, t):
 		return self.nc * 25
+
+	def stoch_USA(self, t):
+		return np.int32(1000 * self.nc * t + self.nc * self.a[t])
+
+
+class vaccine_process2:
+	def __init__(self, nc, T, N):
+		self.NT = np.sum(N)
+		self.pct = 0.05
+		c = 10
+		np.random.seed(c)
+		self.a = np.random.normal(10, 5, size=T)
+		self.T = T
+		self.nc = nc
+		np.random.seed(None)
+
+	def stoch(self, t):
+		return np.int32(self.pct * self.NT + self.a[t] * t)
+
+	def stoch2(self, t):
+		return np.int32(3 * self.nc * t + self.nc * self.a[t]/50)
+
+	def const(self, t):
+		return self.nc * 25
+
+	def stoch_USA(self, t):
+		return np.int32(1000 * self.nc * t + self.nc * self.a[t])
 
 class test_process:
 	def __init__(self, nc, T):
 		self.T = T
 		self.nc = nc
+		c = 10
+		np.random.seed(c)
+		self.a = np.random.normal(50, 50, size=T)
+		np.random.seed(None)
 
 	def const(self, t):
 		return self.nc * 10
+
+	def const_USA(self, t):
+		return self.nc * 1000
+
+	def stoch_USA(self, t):
+		return np.int32(50 * self.nc * t + self.nc * self.a[t])
 
 
 def simplex_projector(y, const):

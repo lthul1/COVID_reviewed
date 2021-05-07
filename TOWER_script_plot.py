@@ -12,7 +12,7 @@ from datetime import datetime
 import cost_object
 
 # n = number of samples paths to simulation
-n = 100
+n = 200
 
 # list of hyperparameters
 # hyperparameters[0] - nc = number of zones
@@ -42,7 +42,7 @@ b = 0.1
 cc = 0.7
 dd = 0.3
 fn = 0
-fp = 0
+fp = 0.04
 p_inf0 = 0.15
 p_rec0 = 0.01
 gamma_ = 0.3
@@ -61,7 +61,7 @@ np.fill_diagonal(FLOW, 0)
 hyperparameters = [nc, T, xi, lz, a, b, cc, dd, fn, fp, p_inf0, p_rec0, gamma_, alpha_, N, bw, locs, bw_approx, FLOW]
 
 # initialize process classes
-vac_proc = vaccine_process(nc, T)
+vac_proc = vaccine_process2(nc, T, N)
 test_proc = test_process(nc, T)
 # create alias for the methods
 vac_fun = vac_proc.stoch
@@ -71,32 +71,32 @@ test_fun = test_proc.const
 
 
 # list of vaccine policies
-vaccine_policies = [vac_policies.prop_policy, vac_policies.susc_allocate, vac_policies.risk_DLA_prime, vac_policies.projectionDLA, vac_policies.Sampled_greedy, vac_policies.nonlinear_solve]
+vaccine_policies = [vac_policies.prop_policy, vac_policies.Sampled_greedy,  vac_policies.risk_DLA_prime, vac_policies.susc_allocate]
 mv = len(vaccine_policies)
-vac_names = ['even', 'PFA', 'DLA-2', 'Qproj', 'sampledCFA', 'nonlinear']
+vac_names = ['even', 'sampledCFA', 'DLA-2', 'PFA']
 # vparams0 is null policy params
 vparams0 = []
-vparams1 = [70, 25]
+vparams1 = [50, 10]
 vparams2 = []
-vparams3 = [0.15]
+vparams3 = [0.05]
 vparams4 = [0.85, 0.4]
-vparams5 = [6, 1000, 0.5]
+vparams5 = [6, 2500, 0.5]
 
-vparam_list = [vparams0, vparams1,vparams3, vparams3, vparams0, vparams5]
+vparam_list = [vparams0, vparams0, vparams3, vparams1]
 
 # list of testing policies
 testing_policies = [test_policies.EI, test_policies.REMBO_EI, test_policies.prop_greedy_trade]
 mt = len(testing_policies)
-test_names = ['Improve', 'REMBO', 'greedy']
+test_names = ['EI', 'REMBO', 'tradeoff']
 # tparams0 is null policy params
 tparams0 = []
 tparams1 = [10]
-tparams2 = [2]
+tparams2 = [3]
 tparams3 = [0.3]
 tparam_list = [tparams0, tparams2, tparams3]
 
 betahat = gen_betas(nc, T, n)
-rs = 0.667 * np.ones(n)
+rs =  np.ones(n)
 COlist = [[[] for j in range(mv)] for i in range(mt)]
 for i in range(mt):
     for j in range(mv):
@@ -148,7 +148,7 @@ for j in range(len(test_names)):
         counter2 += 1
 ax2[0].legend(legend2)
 
-vac_co = ['k', 'r', 'b', 'g', 'm',  'lightsteelblue', 'purple', 'teal', 'olive', 'pink',
+vac_co = ['r', 'b', 'g', 'm',  'lightsteelblue', 'purple', 'teal', 'olive', 'pink',
       'honeydew', 'plum']
 
 costs = COlist.copy()

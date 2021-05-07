@@ -10,18 +10,10 @@ import data_loader as dl
 import time
 from datetime import datetime
 import cost_object
-from urllib.request import urlopen
-import json
-with urlopen('https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json') as response:
-    counties = json.load(response)
-
-import pandas as pd
-df = pd.read_csv("https://raw.githubusercontent.com/plotly/datasets/master/fips-unemp-16.csv",
-                   dtype={"fips": str})
 
 # n = number of samples paths to simulation
-n = 50
-df = 1000
+n = 10
+
 # list of hyperparameters
 # hyperparameters[0] - nc = number of zones
 # hyperparameters[1] - T = time horizon
@@ -41,7 +33,7 @@ df = 1000
 # hyperparameters[15] - bw = mobility bandwidth
 # hyperparameters[16] - locs = locations of each zone
 # hyperparameters[17] - bw_approx - initial controller approximated bandwidth
-nc = 51
+nc = 25
 T = 25
 xi = 0.8
 lz = 0.1
@@ -55,12 +47,16 @@ p_inf0 = 0.15
 p_rec0 = 0.01
 gamma_ = 0.3
 alpha_ = 0.8
-N = dl.load_data('USA_DATA/state_population.obj')
-N = np.int32(np.array(N) / df)
+N = gen_N(nc)
 bw = 0.2
 locs = gen_locs(nc)
 bw_approx = 0.2
-FLOW = dl.load_data('USA_DATA/FLOW_STATE.obj')
+FLOW = np.exp(-0.5 * pdist(locs / bw, 'sqeuclidean'))
+FLOW = squareform(FLOW)
+FLOW = np.min(
+    [0.8 * np.ones(FLOW.shape), np.max([0.001 * np.ones(FLOW.shape), FLOW], axis=0)],
+    axis=0)
+np.fill_diagonal(FLOW, 0)
 
 hyperparameters = [nc, T, xi, lz, a, b, cc, dd, fn, fp, p_inf0, p_rec0, gamma_, alpha_, N, bw, locs, bw_approx, FLOW]
 
@@ -69,39 +65,38 @@ vac_proc = vaccine_process2(nc, T, N)
 test_proc = test_process(nc, T)
 # create alias for the methods
 vac_fun = vac_proc.stoch
-test_fun = test_proc.const_USA
+test_fun = test_proc.const
 
 # initial controller state
 
 
 # list of vaccine policies
-vaccine_policies = [vac_policies.prop_policy, vac_policies.Sampled_greedy, vac_policies.risk_DLA_prime, vac_policies.susc_allocate, vac_policies.projectionDLA]
+vaccine_policies = [vac_policies.null_policy]
 mv = len(vaccine_policies)
-vac_names = ['even', 'sampledCFA', 'DLA-2', 'PFA', 'Qproj']
+vac_names = ['null']
 # vparams0 is null policy params
 vparams0 = []
-vparams1 = [50, 10]
+vparams1 = [70, 25]
 vparams2 = []
-vparams3 = [0.05]
+vparams3 = [0.15]
 vparams4 = [0.85, 0.4]
-vparams5 = [6, 1000, 0.5]
+vparams5 = [6, 500, 0.5]
 
-vparam_list = [vparams0, vparams0, vparams3, vparams1, vparams3]
-
+vparam_list = [vparams0]
 
 # list of testing policies
-testing_policies = [test_policies.EI, test_policies.REMBO_EI, test_policies.prop_greedy_trade]
+testing_policies = [test_policies.REMBO_EI]
 mt = len(testing_policies)
-test_names = ['Improve', 'REMBO', 'fairness_tradeoff']
+test_names = ['REMBO']
 # tparams0 is null policy params
 tparams0 = []
 tparams1 = [10]
-tparams2 = [4]
+tparams2 = [3]
 tparams3 = [0.3]
-tparam_list = [tparams0, tparams2, tparams3]
+tparam_list = [tparams2]
 
-betahat = gen_USA_betas(nc, T, n)
-rs = 0.2*np.random.rand(n) + 0.6
+betahat = gen_betas(nc, T, n)
+rs = np.ones(n)
 COlist = [[[] for j in range(mv)] for i in range(mt)]
 for i in range(mt):
     for j in range(mv):
@@ -166,26 +161,22 @@ counter = 0
 Ntot = np.sum(N) * np.ones(T)
 S = []
 Ser = []
-Cumul_list = []
 for k in range(len(vac_names)):
     ts_res = []
     ts_err = []
-    ts_cumul = []
     for j in range(len(test_names)):
-        cumulative_eval = np.cumsum(df * costs[j][k], axis=1)
+        cumulative_eval = np.cumsum(costs[j][k], axis=1)
 
         summation_eval_samp = np.cumsum(cumulative_eval, axis=1)
         summation_eval_mean = np.mean(summation_eval_samp, axis=0)
         summation_eval_std = np.std(summation_eval_samp, axis=0)
         # ax[0].plot(instant_mean, co[counter])
-        ts_cumul.append(np.mean(cumulative_eval, axis=0))
         ts_res.append(summation_eval_mean[T-1])
         ts_err.append(summation_eval_std[T - 1])
         legend.append([vac_names[k] + ' + ' + test_names[j]])
         counter += 1
     S.append(ts_res)
     Ser.append(ts_err)
-    Cumul_list.append(ts_cumul)
 # ax[0].legend(legend)
 
 for k in range(len(vac_names)):
@@ -197,11 +188,14 @@ ax.set_xticklabels(test_names)
 Dvec = []
 Dvec.append(S)
 Dvec.append(Ser)
-Dvec.append(Cumul_list)
 now = datetime.now()
 
 current_time = now.strftime("%H,%M,%S")
-dl.save_data(parameter_list, 'USA_output/paramlist_'+str(current_time)+'.obj')
-dl.save_data(Dvec, 'USA_output/dataset_'+str(current_time)+'.obj')
+dl.save_data(parameter_list, 'data/paramlist_'+str(current_time)+'.obj')
+dl.save_data(Dvec, 'data/dataset_'+str(current_time)+'.obj')
+
+
+
+
 
 plt.show()

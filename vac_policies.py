@@ -5,6 +5,11 @@ import scipy.stats as stats
 import utility
 from scipy.spatial.distance import squareform, pdist
 from utility import proj as gradproj
+import data_loader as dl
+
+
+
+
 import matplotlib.pyplot as plt
 class null_policy:
 	# This policy allocates zero vaccines to any zones (This gives a baseline)
@@ -1053,7 +1058,7 @@ class risk_DLA_prime:
 
 			M = np.vstack([np.hstack([np.ones(nc), np.zeros(nc)]), np.hstack([np.zeros(nc), np.ones(nc)])])
 			# Nvac = np.array([nvac, nvac+80])
-			Nvac = np.array([nvac, nvac])
+			Nvac = np.array([nvac, nvac+100])
 			# Add constraints
 			m.addConstr(M @ x <= Nvac, name="c")
 			m.addConstr(0 <= x)
@@ -1172,3 +1177,191 @@ class projectionDLA:
 			decision = xx[:nc]
 
 		return decision
+
+
+
+class SPSA_solve:
+	def __init__(self, model, params):
+		self.model = model
+		self.params = params
+		self.H = np.int32(params[0])
+		self.K = params[1]
+		self.alpha = params[2]
+
+	def __copy__(self):
+		return nonlinear_solve(self.model, self.params)
+
+	def update(self, model_new, _):
+		self.model = model_new
+
+	def decision(self):
+		pS = self.model.state['pS']
+		N = self.model.state['N']
+		Sbar = N * pS
+		nvac = self.model.state['nvac']
+		if np.sum(Sbar) < nvac:
+			decision = Sbar
+		else:
+			pcts = self.model.N / sum(self.model.N)
+			xinit = [nvac * pcts for h in range(self.H)]
+			# print('even:  ' + str(nvac * pcts))
+			xstar = self.solve_nonlin(xinit, nvac)
+			# print('xstar:  ' + str(xstar[:self.model.nc]))
+			# print('beta = '+str(self.model.beta))
+			decision = xstar[:self.model.nc]
+		return decision
+
+	def solve_nonlin(self, xinit, nvac):
+		K = self.K
+		nc = self.model.nc
+		state = self.model.state.copy()
+		kk = np.arange(1, K + 1)
+		gg = 0.2
+		c = 0.1
+		# eta = np.max([0.01 * np.ones(eta.shape), hh/(eta+hh)], axis=0)
+		ck = c / (kk) ** gg
+		xinit = np.array(xinit).flatten()
+		xtune1 = xinit.copy()
+		xtune_t = xtune1.copy()
+		mt = 0
+		vt = 0
+		b1 = 0.9
+		b2 = 0.99
+		eps = 10e-8
+		g2 = 0
+		lr = 15
+
+		et = 0.8
+		tlist = [list(xtune1)]
+
+		# print('tunable1 = ' + str(xtune1))
+		F = []
+		for k in range(K):
+			np.random.seed(None)
+			# print('###  k = ' + str(k) + '  ####')
+
+			vk = np.random.rand(xtune1.shape[0])
+			hk = 2 * np.int32(vk > 0.5) - 1
+
+			xtune_t = xtune1.copy()
+			tune_tn1 = xtune_t - ck[k] * hk
+			tune_t1 = xtune_t + ck[k] * hk
+			tune_tn1 = np.array([gradproj(tune_tn1[(nc * i):(nc * (i + 1))], nvac) for i in range(self.H)]).flatten()
+			tune_t1 = np.array([gradproj(tune_t1[(nc * i):(nc * (i + 1))], nvac) for i in range(self.H)]).flatten()
+
+			state_s = self.state_samps(state)
+
+			F1 = self.simulator(state_s, tune_t1, self.H)
+			Fn1 = self.simulator(state_s, tune_tn1, self.H)
+
+			dG = (F1 - Fn1) / (2 * ck[k]) * hk
+			grad_squared = dG * dG
+			mt = b1 * mt + (1 - b1) * dG
+			vt = b2 * vt + (1 - b2) * grad_squared
+			mhat = mt / (1 - b1 ** (k + 1))
+			vhat = vt / (1 - b2 ** (k + 1))
+			alpha = lr / (np.sqrt(vhat) + eps)
+			alphaG = alpha * mhat
+			xtune1 = xtune_t - alphaG
+			xtune1 = np.array([gradproj(xtune1[(nc * i):(nc * (i + 1))], nvac) for i in range(self.H)]).flatten()
+
+			# print('tunable1 = ' + str(xtune1))
+			# print('alpha = ' + str(alpha))
+			# print('ck = ' + str(ck[k]))
+			tlist.append(list(xtune1))
+
+			F.append(F1)
+
+		return xtune1
+
+	def simulator(self, statet, x, T):
+		# x comes in as a T*nc vector
+		state = statet.copy()
+		nc = state['nc']
+
+		xl = [x[(nc * i):(nc * (i + 1))] for i in range(T)]
+		beta = state['beta']
+		gamma = state['gamma']
+
+		cost = []
+		for t in range(T):
+			pS = state['pS'].copy()
+			pI = state['pI'].copy()
+			pR = state['pR'].copy()
+			N = state['N']
+			Sx = np.max([np.zeros(nc), N * pS - xl[t]], axis=0)
+			S = Sx - (beta) * pI * Sx
+			I = (1 - gamma) * N * pI + (beta) * pI * Sx
+			R = N * pR + gamma * N * pI + np.min([N * pS, xl[t]], axis=0)
+			state['pS'] = S / N
+			state['pI'] = I / N
+			state['pR'] = R / N
+			cost.append(np.sum(I - N * pI))
+		cumuls = np.cumsum(cost)
+		return np.cumsum(cumuls)[T - 1]
+
+	def state_samps(self, state):
+		state1 = state.copy()
+		pSs = state1['pS']
+		pIs = state1['pI']
+		pRs = state1['pR']
+		N = state1['N']
+
+		V = np.array([np.random.multinomial(N[k], pvals=[pSs[k],pIs[k],pRs[k]]) for k in range(self.model.nc)])
+		S = V[:,0]
+		I = V[:, 0]
+		R = V[:, 0]
+		state_samp = state.copy()
+		state_samp['pS'] = S / N
+		state_samp['pI'] = I / N
+		state_samp['pR'] = R / N
+		return state_samp
+
+class BackwardADP:
+	# This policy implements a greedy algorithm with respect to a sample of the belief state
+	def __init__(self, model, params):
+		self.model = model
+		self.params = params
+		time = '08,28,46'
+		nc = self.model.nc
+		name = 'ADP/data_' + str(nc) + '_time_' + str(time) + '.obj'
+		self.V = dl.load_data(name)
+
+
+	def __copy__(self):
+		return Sampled_greedy(self.model, self.params)
+
+	def update(self, model, params):
+		self.model = model
+		self.params = params
+
+	def decision(self):
+		nc = self.model.nc
+		state0 = self.model.state.copy()
+		xi = self.model.state['xi']
+		beta = state0['beta']
+		nvac = state0['nvac']
+		t = state0['t']
+		N = self.model.state['N']
+		thetaS = self.V[t+1][:nc]
+		thetaI = self.V[t+1][nc:2 * nc]
+		thetaR = self.V[t+1][2 * nc:3 * nc]
+		pI = state0['pI']
+		pS = state0['pS']
+		pR = state0['pR']
+		Ibar = pI * N
+		Rbar = pR * N
+		Sbar = pS * N
+
+		c = -beta / N * xi * Ibar + thetaS * xi * (beta / N * Ibar - 1) + thetaI * (-beta / N * Ibar * xi) + thetaR * xi
+		m = gp.Model("iP")
+		# Create variables
+		x = m.addMVar(shape=self.model.nc, vtype=GRB.INTEGER, name="x")
+
+		m.setParam('OutputFlag', 0)
+		m.setObjective(c @ x, GRB.MAXIMIZE)
+		m.addConstr(np.ones(nc) @ x <= nvac, name="c")
+		m.addConstr(0 <= x)
+		m.addConstr(x <= Sbar)
+		m.optimize()
+		return x.X
