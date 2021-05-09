@@ -20,8 +20,8 @@ df = pd.read_csv("https://raw.githubusercontent.com/plotly/datasets/master/fips-
                    dtype={"fips": str})
 
 # n = number of samples paths to simulation
-n = 50
-df = 1000
+n = 1
+df = 100
 # list of hyperparameters
 # hyperparameters[0] - nc = number of zones
 # hyperparameters[1] - T = time horizon
@@ -51,7 +51,7 @@ cc = 0.7
 dd = 0.3
 fn = 0
 fp = 0.04
-p_inf0 = 0.15
+p_inf0 = 0.05
 p_rec0 = 0.01
 gamma_ = 0.3
 alpha_ = 0.8
@@ -75,9 +75,9 @@ test_fun = test_proc.const_USA
 
 
 # list of vaccine policies
-vaccine_policies = [vac_policies.prop_policy, vac_policies.Sampled_greedy, vac_policies.risk_DLA_prime, vac_policies.susc_allocate, vac_policies.projectionDLA]
+vaccine_policies = [vac_policies.prop_policy, vac_policies.Sampled_greedy, vac_policies.risk_DLA_prime, vac_policies.susc_allocate]
 mv = len(vaccine_policies)
-vac_names = ['even', 'sampledCFA', 'DLA-2', 'PFA', 'Qproj']
+vac_names = ['even', 'sampledCFA', 'DLA-2', 'PFA']
 # vparams0 is null policy params
 vparams0 = []
 vparams1 = [50, 10]
@@ -86,7 +86,7 @@ vparams3 = [0.05]
 vparams4 = [0.85, 0.4]
 vparams5 = [6, 1000, 0.5]
 
-vparam_list = [vparams0, vparams0, vparams3, vparams1, vparams3]
+vparam_list = [vparams0, vparams0, vparams3, vparams1]
 
 
 # list of testing policies
@@ -103,6 +103,8 @@ tparam_list = [tparams0, tparams2, tparams3]
 betahat = gen_USA_betas(nc, T, n)
 rs = 0.2*np.random.rand(n) + 0.6
 COlist = [[[] for j in range(mv)] for i in range(mt)]
+Xvaclist = [[[] for j in range(mv)] for i in range(mt)]
+Inc = [[[] for j in range(mv)] for i in range(mt)]
 for i in range(mt):
     for j in range(mv):
         for k in range(n):
@@ -113,10 +115,11 @@ for i in range(mt):
             print('k = '+str(k) + ':   Vaccine Policy: ' + str(vac_names[j]))
             Movers = gen_FLOW(nc, T, n, FLOW, N)
             stochastics = [betahat[:, :, k], vac_fun, test_fun, Movers, rs[k]]
-            costs = run_sample_path(hyperparameters, stochastics, vaccine_policies[j], testing_policies[i],
+            costs, xvaclist, Ilist = run_sample_path(hyperparameters, stochastics, vaccine_policies[j], testing_policies[i],
                                     vparam_list[j], tparam_list[i])
             COlist[i][j].append(costs.inst_list)
-
+            Xvaclist[i][j].append(xvaclist)
+            Inc[i][j].append(Ilist)
 # plotter = cost_object.plotter(hyperparameters, vac_names, test_names)
 # plotter.plot_all(COlist)
 # plt.show()
@@ -198,6 +201,8 @@ Dvec = []
 Dvec.append(S)
 Dvec.append(Ser)
 Dvec.append(Cumul_list)
+Dvec.append(Inc)
+Dvec.append(Xvaclist)
 now = datetime.now()
 
 current_time = now.strftime("%H,%M,%S")

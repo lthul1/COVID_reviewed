@@ -35,10 +35,17 @@ def gen_betas(nc,T,n):
 def gen_USA_betas(nc,T,n):
 	# this function takes number of counties as input and returns the mean beta values for each county
 	# stock betas
-	a = np.random.uniform(low=-0.01, high=0.01, size=[nc,T,n])
-	beta_ = dl.load_data('USA_DATA/state_beta.obj')
-	betahat = beta_[:,None,None] + a
-	betahat = np.min([0.95 * np.ones([nc,T,n]), np.max([0.5 * np.ones([nc,T,n]), betahat], axis=0)], axis=0)
+	deltabeta = 0.04
+	betaz = dl.load_data('USA_DATA/state_beta.obj')
+	betahat = np.zeros([nc, T, n])
+	betahat[:, 0, 0] = betaz
+	for i in range(n):
+		for t in range(T - 1):
+			a = np.random.uniform(low=-deltabeta, high=deltabeta, size=nc)
+			betahat[:, t + 1, i] = betaz + a
+
+	betahat = np.min([0.95 * np.ones([nc, T, n]), np.max([0.3 * np.ones([nc, T, n]), betahat], axis=0)], axis=0)
+
 	return betahat
 
 
@@ -324,7 +331,7 @@ def USA_plot(costs, T):
 	# ik = np.max([np.zeros(ik.shape), np.log10(ik)], axis=0)
 	# ik[8,:] = np.log10(np.max(I))
 	# # ik[39,:] = np.max([0, np.log10(np.min(I))])
-	In = np.max([np.zeros(costs.shape), np.log10(costs)], axis=0)
+	In = np.max([np.zeros(costs.shape), np.log10(costs+10e-6)], axis=0)
 	plotmap = True
 	if plotmap:
 		data_slider = []
@@ -332,9 +339,9 @@ def USA_plot(costs, T):
 		# cmap = matplotlib.cm.get_cmap('GnBu')
 		# median = np.median(In)
 		# color = 'rgb' + str(cmap(norm(median))[0:3])
-		colorbar = dict(tickvals=[3, 4, 5, 6, 7, 8],
-						ticktext=['1000', '10000', '50000', '100k', '500k', '1M'])
-		for t in range(T):
+		colorbar = dict(tickvals=[1, 2, 3, 4, 5],
+						ticktext=['10', '100', '1000', '10k', '100k'])
+		for t in range(T-1):
 			# set1 = np.max([np.ones(In.shape[0]), np.log10(In[:, t])], axis=0)
 			# set1 = ik[:, t]
 			# rmin = np.min(set1)
@@ -348,12 +355,12 @@ def USA_plot(costs, T):
 			data_each_yr = dict(
 				type='choropleth',
 				locations=codes,
-				z=In[:, t],
+				z=In[:,t],
 				colorbar=colorbar,
 				colorscale="YlOrRd",
 				locationmode='USA-states',
-				zmin=3,
-				zmax=1.3 * np.log10(np.max(costs))
+				zmin=1,
+				zmax= np.log10(np.max(costs)+10e-6)
 				# autocolorscale=True
 			)
 

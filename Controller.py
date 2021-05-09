@@ -29,13 +29,13 @@ class controller:
 	def transition(self, xvac, xtest, Ihat):
 		# update the transition function after the implementation decision has been made
 		eps = 10e-6
-		N = self.N
+		N = self.N.astype(float)
 		pS = self.state['pS']
 		pI = self.state['pI']
 		pR = self.state['pR']
 
-		# compute the necessary satistics
 		Sbar = pS * self.N
+		# compute the necessary satistics
 		Ibar = pI * self.N
 		Rbar = pR * self.N
 

@@ -49,9 +49,13 @@ def run_sample_path(hyperparameters, stochastics, vac_policy, test_policy, vpara
 	vac_pol = vac_policy(model, vparam)
 	test_pol = test_policy(model, tparam, vac_pol.__copy__())
 
+	xvaclist = []
+	Ilist = []
+
 	xvac = vac_pol.decision()
 	xtest = test_pol.decision(xvac)
-
+	xvaclist.append(xvac)
+	Ilist.append(N * model.state['pI'])
 	for t in np.arange(1, T - 1):
 		# print('t = '+str(t))
 		# step environment forward to t+1
@@ -69,9 +73,12 @@ def run_sample_path(hyperparameters, stochastics, vac_policy, test_policy, vpara
 		xvac = vac_pol.decision()
 		test_pol.update(model, tparam, vac_pol.__copy__())
 		xtest = test_pol.decision(xvac)
+		xvaclist.append(xvac)
+		Ilist.append(N * model.state['pI'])
+
 
 	c = sim.forward_one_step(xvac, T - 1)
 	CO.update(c)
 	# sim.tracker.plot(0)
 
-	return CO
+	return CO, xvaclist, Ilist
