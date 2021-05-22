@@ -19,8 +19,10 @@ class controller:
 		self.env_funs = env_funs
 		self.lz = self.state['lz']
 
+
+
 	def __copy__(self):
-		return controller(self.state.copy(), self.env_funs)
+		return controller(self.state.copy(), self.env_funs, self.sim)
 
 	def exogenous(self, xtest, t):
 		# receive the new exogenous information
@@ -33,18 +35,19 @@ class controller:
 		pS = self.state['pS']
 		pI = self.state['pI']
 		pR = self.state['pR']
+		xi = self.state['xi']
 
 		Sbar = pS * self.N
 		# compute the necessary satistics
 		Ibar = pI * self.N
 		Rbar = pR * self.N
 
-		EISx = N * pI * ((N - 1) * pS - xvac)
+		EISx = N * pI * ((N - 1) * pS - xi*xvac)
 		ESI = N * (N - 1) * pI * pS
 		ES2I2 = N * (N - 1) * pI * pS * (1 + (pI + pS) * (N - 2) + pI * pS * (N - 2) * (N - 3))
 		VarSI = ES2I2 - ESI ** 2
-		VarxI = xvac ** 2 * (N * pI * (1 - pI))
-		cov = -2 * xvac * N * (N - 1) * pI * pS * (1 - 2 * pI)
+		VarxI = (xi*xvac) ** 2 * (N * pI * (1 - pI))
+		cov = -2 * xi*xvac * N * (N - 1) * pI * pS * (1 - 2 * pI)
 		s = np.sqrt(VarSI + VarxI + cov + eps)
 
 		mean = EISx
@@ -68,19 +71,19 @@ class controller:
 		beta_tz = self.state['lz'] * (N-Ibar1)
 
 		# update the estimator for the beta-binomial
+		# p_inf = (Ihat + alpha_tz) / (xtest + self.state['lz'] * N)
 		p_inf = (Ihat + alpha_tz) / (xtest + self.state['lz'] * N)
-		if (p_inf < 0).any():
-			print('ISNN')
-
 		# project the other dimensions back onto it
 		# sv = np.array([simplex_projector(np.array([Sbar1[i]/N[i], Rbar1[i]/N[i]]), const=p_inf[i]) for i in range(self.nc)])
 
 		sv = np.array(
-			[proj(np.array([Sbar1[i] / N[i], Rbar1[i] / N[i]]), const=p_inf[i]) for i in range(self.nc)])
+			[proj(np.array([Sbar1[i] / N[i], Rbar1[i] / N[i]]), const=1 - p_inf[i]) for i in range(self.nc)])
 		self.state['pS'] = sv[:,0]
 		self.state['pR'] = sv[:,1]
 		self.state['pI'] = p_inf
 
+		lam = self.state['lz']
+		self.state['sigmaI'] = xtest * alpha_tz * beta_tz * (N + xtest) / ((lam*N)**2 * (lam*N+1))
 
 
 	def forward_one_step(self, xvac, xtest, nvac, ntest):

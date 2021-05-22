@@ -77,11 +77,11 @@ class prop_policy:
 		pS = self.model.state['pS']
 		N = self.model.state['N']
 		Sbar = N * pS
-		if np.sum(Sbar) < nvac:
-			decision = Sbar
-		else:
-			pcts = N / sum(N)
-			decision = np.floor(nvac * pcts)
+		# if np.sum(Sbar) < nvac:
+		# 	decision = Sbar
+		# else:
+		pcts = N / sum(N)
+		decision = np.floor(nvac * pcts)
 		return decision
 
 class constant_policy:
@@ -121,13 +121,13 @@ class susc_allocate:
 		pS = self.model.state['pS']
 		N = self.model.state['N']
 		Sbar = N * pS
-		if np.sum(Sbar) < nvac:
-			decision = Sbar
-		else:
-			pS = self.model.state['pS']
-			pt = (1 / (1 + np.exp(-self.k * pS))) ** self.a
-			nc = self.model.nc
-			decision = nvac * (pt / np.sum(pt))
+		# if np.sum(Sbar) < nvac:
+		# 	decision = Sbar
+		# else:
+		pS = self.model.state['pS']
+		pt = (1 / (1 + np.exp(-self.k * pS))) ** self.a
+		nc = self.model.nc
+		decision = nvac * (pt / np.sum(pt))
 		# xi = np.floor(nvac / nc)
 		# rem = np.int32(nvac % nc)
 		# x = xi * np.ones(nc)
@@ -160,20 +160,28 @@ class Sampled_greedy:
 		Ihat = V[:, 1]
 		Rhat = V[:, 2]
 		nvac = self.model.state['nvac']
-		nc = self.model.nc
-		pihat = Ihat / N
-		c = beta_ * pihat
-		m = gp.Model("iP")
-		# Create variables
-		x = m.addMVar(shape=nc, vtype=GRB.INTEGER, name="x")
+		if np.sum(Shat) < nvac:
+			xtemp = Shat
+			nvac_prime = nvac - np.sum(xtemp)
+			xplus = nvac_prime * N / sum(N)
+			decision = xtemp + xplus
+		else:
 
-		m.setParam('OutputFlag', 0)
-		m.setObjective(c @ x, GRB.MAXIMIZE)
-		m.addConstr(np.ones(nc) @ x <= nvac, name="c")
-		m.addConstr(0 <= x)
-		m.addConstr(x <= Shat)
-		m.optimize()
-		return x.X
+			nc = self.model.nc
+			pihat = Ihat / N
+			c = beta_ * pihat
+			m = gp.Model("iP")
+			# Create variables
+			x = m.addMVar(shape=nc, vtype=GRB.INTEGER, name="x")
+
+			m.setParam('OutputFlag', 0)
+			m.setObjective(c @ x, GRB.MAXIMIZE)
+			m.addConstr(np.ones(nc) @ x <= nvac, name="c")
+			m.addConstr(0 <= x)
+			m.addConstr(x <= Shat)
+			m.optimize()
+			decision = x.X
+		return decision
 
 class risk_greedy:
 	# This risk adjusted CFA
@@ -183,7 +191,7 @@ class risk_greedy:
 		self.alpha = params[0]
 
 	def __copy__(self):
-		return Sampled_greedy(self.model, self.params)
+		return risk_greedy(self.model, self.params)
 
 	def update(self, model, params):
 		self.model = model
@@ -199,26 +207,34 @@ class risk_greedy:
 		nvac = self.model.state['nvac']
 
 		mean = N * pS
-		std = np.sqrt(N * pS * (1 - pS))
+		if np.sum(mean) < nvac:
+			xtemp = mean
+			nvac_prime = nvac - np.sum(xtemp)
+			xplus = nvac_prime * N / sum(N)
 
-		tt = std < 0.01
-		std[tt] = 0.01
-		Salpha = np.max([np.zeros(self.model.nc), mean - std * stats.norm.ppf(self.alpha)], axis=0)
+			decision = xtemp + xplus
+		else:
+			std = np.sqrt(N * pS * (1 - pS))
 
-		nvac = self.model.state['nvac']
-		nc = self.model.nc
-		c = beta_ * pI
-		m = gp.Model("iP")
-		# Create variables
-		x = m.addMVar(shape=nc, vtype=GRB.INTEGER, name="x")
+			tt = std < 0.01
+			std[tt] = 0.01
+			Salpha = np.max([np.zeros(self.model.nc), mean + std * stats.norm.ppf(self.alpha)], axis=0)
 
-		m.setParam('OutputFlag', 0)
-		m.setObjective(c @ x, GRB.MAXIMIZE)
-		m.addConstr(np.ones(nc) @ x <= nvac, name="c")
-		m.addConstr(0 <= x)
-		m.addConstr(x <= Salpha)
-		m.optimize()
-		return x.X
+			nvac = self.model.state['nvac']
+			nc = self.model.nc
+			c = beta_ * pI
+			m = gp.Model("iP")
+			# Create variables
+			x = m.addMVar(shape=nc, vtype=GRB.INTEGER, name="x")
+
+			m.setParam('OutputFlag', 0)
+			m.setObjective(c @ x, GRB.MAXIMIZE)
+			m.addConstr(np.ones(nc) @ x <= nvac, name="c")
+			m.addConstr(0 <= x)
+			m.addConstr(x <= Salpha)
+			m.optimize()
+			decision = x.X
+		return decision
 
 
 class multidim_greedy:
@@ -726,7 +742,13 @@ class fairness_risk_adjusted_DLA:
 		self.model = model_new
 
 	def decision(self):
+		pS = self.model.state['pS']
+		Sbar = self.model.N *pS
 		nvac = self.model.state['nvac']
+		# if np.sum(Sbar) < nvac:
+		# 	x = Sbar
+		# else:
+
 		pcts = self.model.N / sum(self.model.N)
 		xrho = self.rho_vac * nvac * pcts
 
@@ -758,88 +780,147 @@ class fairness_risk_adjusted_DLA:
 
 		Salpha = np.max([np.zeros(self.model.nc), mean + std * stats.norm.ppf(self.alpha)], axis=0)
 
+		if np.sum(mean) < nvac:
+			xtemp = mean
+			nvac_prime = nvac - np.sum(xtemp)
+			xplus = nvac_prime * N / sum(N)
+
+			decision = xtemp + xplus
+		else:
+			m = gp.Model("qp")
+			# Create variables
+			x = m.addMVar(shape=2 * nc, vtype=GRB.INTEGER, name="x")
+
+			# Set objective: x^2 + x*y + y^2 + y*z + z^2 + 2 x
+
+			m.setParam('OutputFlag', 0)
+			m.setParam('TimeLimit', 10)
+
+			A1 = -beta * pI
+			A2 = (1 - gamma) * N * pI + beta * (N - 1) * pS * pI
+			K1 = (beta * pI) - 1
+			K2 = (1-(beta*pI)) * Salpha
+
+			p = (1 - gamma) * A1 + (beta / N) * A1 * K2 + (beta / N) * A2 * K1
+			q = -(beta / N) * A2
+			Q00 = np.diag((beta / N) * A1 * K1)
+			Q01 = np.diag(-0.5 * (beta / N) * A1)
+			Q = np.vstack([np.hstack([Q00, Q01]), np.hstack([Q01, np.zeros([nc, nc])])])
+			# Qproj = np.zeros([2*nc, 2*nc])
+			# Qproj[nc:, :nc] = Q01
+			# Qproj[:nc, nc:] = Q01
+			e,v = np.linalg.eig(Q)
+			e = np.max([1e-10*np.ones(2*nc), e], axis=0)
+
+			# e = np.zeros(2*nc)
+			Qproj = np.dot(np.dot(v.T, np.diag(e)), v)
+			c = np.hstack([p, q])
+			m.setObjective(x @ Qproj @ x + c @ x, GRB.MINIMIZE)
+
+			M = np.vstack([np.hstack([np.ones(nc), np.zeros(nc)]), np.hstack([np.zeros(nc), np.ones(nc)])])
+			# Nvac = np.array([nvac, nvac+80])
+			Nvac = np.array([nvac, nvac])
+			# Add constraints
+			m.addConstr(M @ x <= Nvac, name="c")
+			m.addConstr(0 <= x)
+			G = np.vstack([np.hstack([np.eye(nc), np.zeros([nc, nc])]), np.hstack([-K1 * np.eye(nc), np.eye(nc)])])
+			R = np.hstack([Salpha, K2])
+			m.addConstr(G @ x <= R)
+			# m.setParam('NonConvex', 2)
+			m.optimize()
+			xx = x.X
+			decision = xx[:nc]
+		return decision
+
+class risk_DLA:
+	def __init__(self, model, params):
+		self.model = model
+		self.params = params
+		self.alpha = params[0]
+
+	def __copy__(self):
+		return risk_DLA(self.model, self.params)
+
+	def update(self, model_new, _):
+		self.model = model_new
+
+	def decision(self):
+		nvac = self.model.state['nvac']
+		xstar = self.solve_Quad(nvac)
+		return xstar
+
+	def solve_Quad(self, nvac):
+		N = self.model.N
+		beta = self.model.beta
+		gamma = self.model.gamma
+		nc = self.model.nc
+		state1 = self.model.state.copy()
+
+		pS = state1['pS']
+		pI = state1['pI']
+		pR = state1['pR']
+
+
+
+
+		mean = N * pS
+		std = np.sqrt(N * pS * (1 - pS))
+
+		tt = std < 0.01
+		std[tt] = 0.01
+
+		Salpha = np.max([np.zeros(self.model.nc), mean + std * stats.norm.ppf(self.alpha)], axis=0)
+
 		if np.sum(Salpha) < nvac:
 			decision = Salpha
 		else:
-			if nc <24:
-				m = gp.Model("qp")
-				# Create variables
-				x = m.addMVar(shape=2 * nc, vtype=GRB.INTEGER, name="x")
+			m = gp.Model("qp")
+			# Create variables
+			x = m.addMVar(shape=2 * nc, vtype=GRB.INTEGER, name="x")
 
-				# Set objective: x^2 + x*y + y^2 + y*z + z^2 + 2 x
-				m.setParam('OutputFlag', 0)
-				m.setParam('TimeLimit', 10)
-				A1 = -beta * pI
-				A2 = (1-gamma) * N * pI + beta*(N-1)*pS*pI
-				K1 = (beta * pI) - 1
-				K2 = (1-(beta*pI)) * Salpha
+			# Set objective: x^2 + x*y + y^2 + y*z + z^2 + 2 x
 
-				p = (1-gamma) * A1 + (beta/N) * A1 * K2 + (beta/N) * A2 * K1
-				q = -(beta/N) * A2
-				Q00 = np.diag((beta/N) * A1 * K1)
-				Q01 = np.diag(-0.5 * (beta/N) * A1)
-				Q = np.vstack([np.hstack([Q00, Q01]), np.hstack([Q01, np.zeros([nc, nc])])])
-				c = np.hstack([p,q])
-				m.setObjective(x @ Q @ x + c @ x, GRB.MINIMIZE)
+			m.setParam('OutputFlag', 0)
+			m.setParam('TimeLimit', 10)
 
-				M = np.vstack([np.hstack([np.ones(nc), np.zeros(nc)]), np.hstack([np.zeros(nc), np.ones(nc)])])
-				# Nvac = np.array([nvac, nvac+80])
-				Nvac = np.array([nvac, nvac])
-				# Add constraints
-				m.addConstr(M @ x <= Nvac, name="c")
-				m.addConstr(0 <= x)
-				G = np.vstack([np.hstack([np.eye(nc), np.zeros([nc, nc])]), np.hstack([-K1 * np.eye(nc), np.eye(nc)])])
-				R = np.hstack([Salpha, K2])
-				m.addConstr(G @ x <= R)
-				m.setParam('NonConvex', 2)
-				m.optimize()
-				xx = x.X
-				decision = xx[:nc]
-			else:
-				m = gp.Model("qp")
-				# Create variables
-				x = m.addMVar(shape=2 * nc, vtype=GRB.INTEGER, name="x")
+			A1 = -beta * pI
+			A2 = (1 - gamma) * N * pI + beta * (N - 1) * pS * pI
+			K1 = (beta * pI) - 1
+			K2 = (1-(beta*pI)) * Salpha
 
-				# Set objective: x^2 + x*y + y^2 + y*z + z^2 + 2 x
+			p = (1 - gamma) * A1 + (beta / N) * A1 * K2 + (beta / N) * A2 * K1
+			q = -(beta / N) * A2
+			Q00 = np.diag((beta / N) * A1 * K1)
+			Q01 = np.diag(-0.5 * (beta / N) * A1)
+			Q = np.vstack([np.hstack([Q00, Q01]), np.hstack([Q01, np.zeros([nc, nc])])])
+			# Qproj = np.zeros([2*nc, 2*nc])
+			# Qproj[nc:, :nc] = Q01
+			# Qproj[:nc, nc:] = Q01
+			e,v = np.linalg.eig(Q)
+			e = np.max([1e-10*np.ones(2*nc), e], axis=0)
 
-				m.setParam('OutputFlag', 0)
-				m.setParam('TimeLimit', 10)
+			# e = np.zeros(2*nc)
+			Qproj = np.dot(np.dot(v.T, np.diag(e)), v)
+			c = np.hstack([p, q])
+			m.setObjective(x @ Qproj @ x + c @ x, GRB.MINIMIZE)
 
-				A1 = -beta * pI
-				A2 = (1 - gamma) * N * pI + beta * (N - 1) * pS * pI
-				K1 = (beta * pI) - 1
-				K2 = (1-(beta*pI)) * Salpha
-
-				p = (1 - gamma) * A1 + (beta / N) * A1 * K2 + (beta / N) * A2 * K1
-				q = -(beta / N) * A2
-				Q00 = np.diag((beta / N) * A1 * K1)
-				Q01 = np.diag(-0.5 * (beta / N) * A1)
-				Q = np.vstack([np.hstack([Q00, Q01]), np.hstack([Q01, np.zeros([nc, nc])])])
-				# Qproj = np.zeros([2*nc, 2*nc])
-				# Qproj[nc:, :nc] = Q01
-				# Qproj[:nc, nc:] = Q01
-				e,v = np.linalg.eig(Q)
-				e = np.max([1e-10*np.ones(2*nc), e], axis=0)
-
-				# e = np.zeros(2*nc)
-				Qproj = np.dot(np.dot(v.T, np.diag(e)), v)
-				c = np.hstack([p, q])
-				m.setObjective(x @ Qproj @ x + c @ x, GRB.MINIMIZE)
-
-				M = np.vstack([np.hstack([np.ones(nc), np.zeros(nc)]), np.hstack([np.zeros(nc), np.ones(nc)])])
-				# Nvac = np.array([nvac, nvac+80])
-				Nvac = np.array([nvac, nvac])
-				# Add constraints
-				m.addConstr(M @ x <= Nvac, name="c")
-				m.addConstr(0 <= x)
-				G = np.vstack([np.hstack([np.eye(nc), np.zeros([nc, nc])]), np.hstack([-K1 * np.eye(nc), np.eye(nc)])])
-				R = np.hstack([Salpha, K2])
-				m.addConstr(G @ x <= R)
-				# m.setParam('NonConvex', 2)
-				m.optimize()
-				xx = x.X
-				decision = xx[:nc]
+			M = np.vstack([np.hstack([np.ones(nc), np.zeros(nc)]), np.hstack([np.zeros(nc), np.ones(nc)])])
+			# Nvac = np.array([nvac, nvac+80])
+			Nvac = np.array([nvac, nvac])
+			# Add constraints
+			m.addConstr(M @ x <= Nvac, name="c")
+			m.addConstr(0 <= x)
+			G = np.vstack([np.hstack([np.eye(nc), np.zeros([nc, nc])]), np.hstack([-K1 * np.eye(nc), np.eye(nc)])])
+			R = np.hstack([Salpha, K2])
+			m.addConstr(G @ x <= R)
+			# m.setParam('NonConvex', 2)
+			m.optimize()
+			xx = x.X
+			decision = xx[:nc]
 		return decision
+
+
+
 
 
 class nonlinear_solve:
@@ -1016,25 +1097,28 @@ class risk_DLA_prime:
 		nvac = self.model.state['nvac']
 
 		mean = N * pS
-		std = np.sqrt(N * pS * (1 - pS))
-
-		tt = std < 0.01
-		std[tt] = 0.01
-
-		Salpha = np.max([np.zeros(self.model.nc), mean - std * stats.norm.ppf(self.alpha)], axis=0)
-		# Salpha = np.min([N, Salpha], axis=0)
-
-
-		if np.sum(Salpha) < nvac:
-			decision = Salpha
+		if np.sum(mean) < nvac:
+			xtemp = mean
+			nvac_prime = nvac - np.sum(xtemp)
+			xplus = nvac_prime * N / sum(N)
+			decision = xtemp + xplus
 		else:
+			std = np.sqrt(N * pS * (1 - pS))
+
+			tt = std < 0.01
+			std[tt] = 0.01
+
+			Salpha = np.max([np.zeros(self.model.nc), mean + std * stats.norm.ppf(self.alpha)], axis=0)
+			# Salpha = np.min([N, Salpha], axis=0)
+
+
 			m = gp.Model("qp")
 			# Create variables
-			x = m.addMVar(shape=2 * nc, vtype=GRB.CONTINUOUS, name="x")
+			x = m.addMVar(shape=2 * nc, vtype=GRB.INTEGER, name="x")
 
 			# Set objective: x^2 + x*y + y^2 + y*z + z^2 + 2 x
 			m.setParam('OutputFlag', 0)
-			m.setParam('TimeLimit', 20)
+			m.setParam('TimeLimit', 10)
 
 			A = -(beta/N)* Ibar
 			B = (1-gamma)*Ibar + (beta/N)*Ibar*Salpha
@@ -1046,19 +1130,21 @@ class risk_DLA_prime:
 
 			Q00 = np.zeros([nc,nc])
 			Q01 = np.zeros([nc,nc])
-			np.fill_diagonal(Q00, (beta/N) * A * C)
-			np.fill_diagonal(Q01, -(beta/N)*A)
+			np.fill_diagonal(Q00, (beta/N) * A * C )
+			np.fill_diagonal(Q01, -0*(beta/N)*A )
 
 			K1 = np.eye(nc)
 			np.fill_diagonal(K1,-C)
 
 			Q = np.vstack([np.hstack([Q00, Q01]), np.hstack([Q01, np.zeros([nc, nc])])])
-			c = np.hstack([p,q])
+			c = np.hstack([ p,  q])
+			# print(np.isnan(Q).any())
+			# print(np.isnan(c).any())
 			m.setObjective(x @ Q @ x + c @ x, GRB.MINIMIZE)
 
 			M = np.vstack([np.hstack([np.ones(nc), np.zeros(nc)]), np.hstack([np.zeros(nc), np.ones(nc)])])
 			# Nvac = np.array([nvac, nvac+80])
-			Nvac = np.array([nvac, nvac+100])
+			Nvac = np.array([nvac, nvac])
 			# Add constraints
 			m.addConstr(M @ x <= Nvac, name="c")
 			m.addConstr(0 <= x)
@@ -1068,9 +1154,242 @@ class risk_DLA_prime:
 			m.setParam('NonConvex', 2)
 			m.optimize()
 			xx = x.X
+			# print(xx)
 			decision = xx[:nc]
 
 		return decision
+
+class risk_DLA_param:
+	def __init__(self, model, params):
+		self.model = model
+		self.params = params
+		self.alpha = params[0]
+		self.c0 = params[1]
+		self.c1 = params[2]
+		self.c2 = params[3]
+		self.c3 = params[4]
+		# self.c4 = params[5]
+
+	def __copy__(self):
+		return risk_DLA_param(self.model, self.params)
+
+	def update(self, model_new, _):
+		self.model = model_new
+
+	def decision(self):
+		nvac = self.model.state['nvac']
+		pcts = self.model.N / sum(self.model.N)
+		xstar = self.solve_Quad()
+		# print('xstar:  ' + str(xstar[:self.model.nc]))
+		# print('sum = ' + str(xstar.sum()))
+		return xstar
+
+	def solve_Quad(self):
+		N = self.model.N
+		beta = self.model.beta
+
+		xi = self.model.state['xi']
+		gamma = self.model.gamma
+		nc = self.model.nc
+		state1 = self.model.state.copy()
+
+		pS = state1['pS']
+		# print(np.sum(pS))
+		pI = state1['pI']
+		pR = state1['pR']
+		Ibar = pI * N
+
+		nvac = self.model.state['nvac']
+
+		mean = N * pS
+
+		if np.sum(mean) < nvac:
+
+
+			# print('HIT:   '+str(self.model.state['t']))
+			xtemp = mean
+			nvac_prime = nvac - np.sum(xtemp)
+			xplus = nvac_prime * N / sum(N)
+
+			decision = xtemp + xplus
+		else:
+
+
+			std = np.sqrt(N * pS * (1 - pS))
+
+			tt = std < 0.01
+			std[tt] = 0.01
+
+			Salpha = np.max([np.zeros(self.model.nc), mean + std * stats.norm.ppf(self.alpha)], axis=0)
+			# Salpha = np.min([N, Salpha], axis=0)
+
+
+			m = gp.Model("qp")
+			# Create variables
+			x = m.addMVar(shape=2 * nc, vtype=GRB.CONTINUOUS, name="x")
+
+			# Set objective: x^2 + x*y + y^2 + y*z + z^2 + 2 x
+			m.setParam('OutputFlag', 0)
+			m.setParam('TimeLimit', 20)
+
+			A = -(beta/N)* Ibar
+			B = (1-gamma)*Ibar + (beta/N)*Ibar*Salpha
+			C = (beta/N)*Ibar - 1
+			D = Salpha - (beta/N)*Ibar * Salpha
+
+			p = (1-gamma)*A + (beta/N)*A*D + (beta/N)*B*C
+			q = -(beta/N) *B
+
+			Q00 = np.zeros([nc,nc])
+			Q01 = np.zeros([nc,nc])
+			np.fill_diagonal(Q00, (beta/N) * A * C * self.c0)
+			np.fill_diagonal(Q01, -(beta/N)*A * self.c1)
+
+			K1 = np.eye(nc)
+			np.fill_diagonal(K1,-C)
+
+			Q = np.vstack([np.hstack([Q00, Q01]), np.hstack([Q01, np.zeros([nc, nc])])])
+			c = np.hstack([self.c2 * p, self.c3 * q])
+			#
+			# c = self.c2 *np.hstack([ p, q])
+			# print(np.isnan(Q).any())
+			# print(np.isnan(c).any())
+			m.setObjective(x @ Q @ x + c @ x, GRB.MINIMIZE)
+
+			M = np.vstack([np.hstack([np.ones(nc), np.zeros(nc)]), np.hstack([np.zeros(nc), np.ones(nc)])])
+			# Nvac = np.array([nvac, nvac+80])
+			Nvac = np.array([nvac, nvac])
+			# Add constraints
+			m.addConstr(M @ x <= Nvac, name="c")
+			m.addConstr(0 <= x)
+			G = np.vstack([np.hstack([np.eye(nc), np.zeros([nc, nc])]), np.hstack([K1, np.eye(nc)])])
+			R = np.hstack([Salpha, D])
+			m.addConstr(G @ x <= R)
+			m.setParam('NonConvex', 2)
+			m.optimize()
+			xx = x.X
+			# print(xx)
+			decision = xx[:nc]
+
+		return decision
+
+
+
+# class risk_DLA_param2:
+# 	def __init__(self, model, params):
+# 		self.model = model
+# 		self.params = params
+# 		self.alpha = params[0]
+# 		self.c0 = params[1]
+# 		self.c1 = params[2]
+# 		self.c2 = params[3]
+# 		self.c3 = params[4]
+# 		# self.c4 = params[5]
+#
+# 	def __copy__(self):
+# 		return risk_DLA_param2(self.model, self.params)
+#
+# 	def update(self, model_new, _):
+# 		self.model = model_new
+#
+# 	def decision(self):
+# 		nvac = self.model.state['nvac']
+# 		pcts = self.model.N / sum(self.model.N)
+# 		xstar = self.solve_Quad()
+# 		# print('xstar:  ' + str(xstar[:self.model.nc]))
+# 		# print('sum = ' + str(xstar.sum()))
+# 		return xstar
+#
+# 	def solve_Quad(self):
+# 		N = self.model.N
+# 		beta = self.model.beta
+#
+# 		xi = self.model.state['xi']
+# 		gamma = self.model.gamma
+# 		nc = self.model.nc
+# 		state1 = self.model.state.copy()
+#
+# 		pS = state1['pS']
+# 		# print(np.sum(pS))
+# 		pI = state1['pI']
+# 		pR = state1['pR']
+# 		Ibar = pI * N
+#
+# 		nvac = self.model.state['nvac']
+#
+# 		mean = N * pS
+#
+# 		if np.sum(mean) < nvac:
+#
+#
+# 			# print('HIT:   '+str(self.model.state['t']))
+# 			xtemp = mean
+# 			nvac_prime = nvac - np.sum(xtemp)
+# 			xplus = nvac_prime * N / sum(N)
+#
+# 			decision = xtemp + xplus
+# 		else:
+#
+#
+# 			std = np.sqrt(N * pS * (1 - pS))
+#
+# 			tt = std < 0.01
+# 			std[tt] = 0.01
+#
+# 			Salpha = np.max([np.zeros(self.model.nc), mean + std * stats.norm.ppf(self.alpha)], axis=0)
+# 			# Salpha = np.min([N, Salpha], axis=0)
+#
+#
+# 			m = gp.Model("qp")
+# 			# Create variables
+# 			x = m.addMVar(shape=2 * nc, vtype=GRB.CONTINUOUS, name="x")
+#
+# 			# Set objective: x^2 + x*y + y^2 + y*z + z^2 + 2 x
+# 			m.setParam('OutputFlag', 0)
+# 			m.setParam('TimeLimit', 20)
+#
+# 			A = -(beta/N)* Ibar
+# 			B = (1-gamma)*Ibar + (beta/N)*Ibar*Salpha
+# 			C = (beta/N)*Ibar - 1
+# 			D = Salpha - (beta/N)*Ibar *Salpha
+#
+# 			p = (1-gamma)*A + (beta/N)*A*D + (beta/N)*B*C
+# 			q = -(beta/N) *B
+#
+# 			Q00 = np.zeros([nc,nc])
+# 			Q01 = np.zeros([nc,nc])
+# 			np.fill_diagonal(Q00, (beta/N) * A * C * self.c0)
+# 			np.fill_diagonal(Q01, -(beta/N)*A * self.c1)
+#
+# 			K1 = np.eye(nc)
+# 			np.fill_diagonal(K1,-C)
+#
+# 			Q = np.vstack([np.hstack([Q00, Q01]), np.hstack([Q01, np.zeros([nc, nc])])])
+# 			c = np.hstack([self.c2 * p, self.c3 * q])
+# 			#
+# 			# c = self.c2 *np.hstack([ p, q])
+# 			# print(np.isnan(Q).any())
+# 			# print(np.isnan(c).any())
+# 			m.setObjective(x @ Q @ x + c @ x, GRB.MINIMIZE)
+#
+# 			M = np.vstack([np.hstack([np.ones(nc), np.zeros(nc)]), np.hstack([np.zeros(nc), np.ones(nc)])])
+# 			# Nvac = np.array([nvac, nvac+80])
+# 			Nvac = np.array([nvac, nvac])
+# 			# Add constraints
+# 			m.addConstr(M @ x <= Nvac, name="c")
+# 			m.addConstr(0 <= x)
+# 			G = np.vstack([np.hstack([np.eye(nc), np.zeros([nc, nc])]), np.hstack([K1, np.eye(nc)])])
+# 			R = np.hstack([Salpha, D])
+# 			m.addConstr(G @ x <= R)
+# 			m.setParam('NonConvex', 2)
+# 			m.optimize()
+# 			xx = x.X
+# 			# print(xx)
+# 			decision = xx[:nc]
+#
+# 		return decision
+
+
 
 
 class projectionDLA:
@@ -1080,7 +1399,7 @@ class projectionDLA:
 		self.alpha = params[0]
 
 	def __copy__(self):
-		return risk_DLA_prime(self.model, self.params)
+		return projectionDLA(self.model, self.params)
 
 	def update(self, model_new, _):
 		self.model = model_new
@@ -1199,16 +1518,16 @@ class SPSA_solve:
 		N = self.model.state['N']
 		Sbar = N * pS
 		nvac = self.model.state['nvac']
-		if np.sum(Sbar) < nvac:
-			decision = Sbar
-		else:
-			pcts = self.model.N / sum(self.model.N)
-			xinit = [nvac * pcts for h in range(self.H)]
-			# print('even:  ' + str(nvac * pcts))
-			xstar = self.solve_nonlin(xinit, nvac)
-			# print('xstar:  ' + str(xstar[:self.model.nc]))
-			# print('beta = '+str(self.model.beta))
-			decision = xstar[:self.model.nc]
+		# if np.sum(Sbar) < nvac:
+		# 	decision = Sbar
+		# else:
+		pcts = self.model.N / sum(self.model.N)
+		xinit = [nvac * pcts for h in range(self.H)]
+		# print('even:  ' + str(nvac * pcts))
+		xstar = self.solve_nonlin(xinit, nvac)
+		# print('xstar:  ' + str(xstar[:self.model.nc]))
+		# print('beta = '+str(self.model.beta))
+		decision = xstar[:self.model.nc]
 		return decision
 
 	def solve_nonlin(self, xinit, nvac):
@@ -1229,7 +1548,7 @@ class SPSA_solve:
 		b2 = 0.99
 		eps = 10e-8
 		g2 = 0
-		lr = 15
+		lr = 0.15
 
 		et = 0.8
 		tlist = [list(xtune1)]
@@ -1246,8 +1565,15 @@ class SPSA_solve:
 			xtune_t = xtune1.copy()
 			tune_tn1 = xtune_t - ck[k] * hk
 			tune_t1 = xtune_t + ck[k] * hk
-			tune_tn1 = np.array([gradproj(tune_tn1[(nc * i):(nc * (i + 1))], nvac) for i in range(self.H)]).flatten()
-			tune_t1 = np.array([gradproj(tune_t1[(nc * i):(nc * (i + 1))], nvac) for i in range(self.H)]).flatten()
+
+			cn1 = tune_tn1.copy() / nvac
+			c1 = tune_t1.copy() / nvac
+
+			tune_tn1 = np.array([gradproj(cn1[(nc * i):(nc * (i + 1))], 1) for i in range(self.H)]).flatten()
+			tune_t1 = np.array([gradproj(c1[(nc * i):(nc * (i + 1))], 1) for i in range(self.H)]).flatten()
+
+			tune_tn1 = tune_tn1 * nvac
+			tune_t1 = tune_t1 * nvac
 
 			state_s = self.state_samps(state)
 
@@ -1263,8 +1589,10 @@ class SPSA_solve:
 			alpha = lr / (np.sqrt(vhat) + eps)
 			alphaG = alpha * mhat
 			xtune1 = xtune_t - alphaG
-			xtune1 = np.array([gradproj(xtune1[(nc * i):(nc * (i + 1))], nvac) for i in range(self.H)]).flatten()
 
+			ctest = xtune1 / nvac
+			xtune1 = np.array([gradproj(ctest[(nc * i):(nc * (i + 1))], 1) for i in range(self.H)]).flatten()
+			xtune1 = xtune1 * nvac
 			# print('tunable1 = ' + str(xtune1))
 			# print('alpha = ' + str(alpha))
 			# print('ck = ' + str(ck[k]))
@@ -1291,7 +1619,7 @@ class SPSA_solve:
 			N = state['N']
 			Sx = np.max([np.zeros(nc), N * pS - xl[t]], axis=0)
 			S = Sx - (beta) * pI * Sx
-			I = (1 - gamma) * N * pI + (beta) * pI * Sx
+			I = (1 - gamma) * N * pI + beta * pI * Sx
 			R = N * pR + gamma * N * pI + np.min([N * pS, xl[t]], axis=0)
 			state['pS'] = S / N
 			state['pI'] = I / N

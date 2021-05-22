@@ -7,36 +7,57 @@ import plotly.express as px
 import plotly.graph_objs as go
 from plotly.graph_objs import *
 import plotly.offline as offline
-import data_loader as dl
-from urllib.request import urlopen
-import json
-with urlopen('https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json') as response:
-    counties = json.load(response)
 
-import pandas as pd
-df = pd.read_csv("https://raw.githubusercontent.com/plotly/datasets/master/fips-unemp-16.csv",
-                   dtype={"fips": str})
 
-def gen_betas(nc,T,n):
+
+def gen_betas(nc,T,n, seed=None):
 	# this function takes number of counties as input and returns the mean beta values for each county
 	# stock betas
 	deltabeta = 0.04
-	betaz = np.random.uniform(low=0.4, high=0.6, size = nc)
+	np.random.seed(seed)
+	betaz = np.random.uniform(low=0.15, high=0.3, size = nc)
+	np.random.seed(None)
 	betahat = np.zeros([nc,T,n])
 	betahat[:,0,0] = betaz
 	for i in range(n):
 		for t in range(T-1):
 			a = np.random.uniform(low=-deltabeta, high=deltabeta, size=nc)
-			betahat[:,t+1,i] = betaz + a
+			betahat[:,t+1,i] = betaz  + a
 
-	betahat = np.min([0.95 * np.ones([nc,T,n]), np.max([0.05 * np.ones([nc,T,n]), betahat], axis=0)], axis=0)
+	betahat = np.max([0.02 * np.ones([nc,T,n]), np.min([0.98* np.ones([nc,T,n]), betahat], axis=0)], axis=0)
 	return betahat
+
+
+
+def gen_betas_NH(nc,T,n, seed=None):
+	# this function takes number of counties as input and returns the mean beta values for each county
+	# stock betas
+	deltabeta = 0.04
+	np.random.seed(seed)
+	betaz = np.random.uniform(low=0.02, high=0.95, size = nc)
+	np.random.seed(None)
+	betahat = np.zeros([nc,T,n])
+	betahat[:,0,0] = betaz
+	for i in range(n):
+		for t in range(T-1):
+			a = np.random.uniform(low=-deltabeta, high=deltabeta, size=nc)
+			betahat[:,t+1,i] = betaz  + a
+
+	betahat = np.max([0.02 * np.ones([nc,T,n]), np.min([0.98* np.ones([nc,T,n]), betahat], axis=0)], axis=0)
+	return betahat
+
+
+
+
 
 def gen_USA_betas(nc,T,n):
 	# this function takes number of counties as input and returns the mean beta values for each county
 	# stock betas
 	deltabeta = 0.04
 	betaz = dl.load_data('USA_DATA/state_beta.obj')
+	mbetaz = np.min(betaz)
+	maxbetaz = np.max(betaz)
+	(betaz - mbetaz) / (maxbetaz - mbetaz) * (0.3 - 0.15) + 0.15
 	betahat = np.zeros([nc, T, n])
 	betahat[:, 0, 0] = betaz
 	for i in range(n):
@@ -44,7 +65,7 @@ def gen_USA_betas(nc,T,n):
 			a = np.random.uniform(low=-deltabeta, high=deltabeta, size=nc)
 			betahat[:, t + 1, i] = betaz + a
 
-	betahat = np.min([0.95 * np.ones([nc, T, n]), np.max([0.3 * np.ones([nc, T, n]), betahat], axis=0)], axis=0)
+	betahat = np.max([0.95 * np.ones([nc, T, n]), np.min([0.05 * np.ones([nc, T, n]), betahat], axis=0)], axis=0)
 
 	return betahat
 
@@ -70,6 +91,19 @@ def gen_N(nc):
 		N = np.random.randint(low = 200, high=maxpop,size=nc)
 	return N
 
+def gen_N_NH(nc):
+	# this function takes number of counties as input and returns the mean beta values for each county
+	# stock betas
+	np.random.seed(0)
+	maxpop = 100
+	N = np.array([700, 800, 845, 1239, 845,1300,2000])
+	if nc < len(N):
+		np.random.shuffle(N)
+		N = N[:nc]
+	else:
+		N = np.random.randint(low =20, high=maxpop,size=nc)
+	return N
+
 def gen_locs(nc):
 	loc = np.array([[0.2, 0.42, 0.6, 0.92, 0.55], [0.82, 0.33, 0.1, 0.12, 0.88]]).T
 	if nc<loc.shape[0]:
@@ -80,36 +114,18 @@ def gen_locs(nc):
 	return locs
 
 
-def NVac_const(nc, t, a):
-	return nc * 100
-
-def NTest_const(nc, t, a):
-	return 100
-
-def NVac_t(t, T):
-	a = np.zeros(T)
-	tt = np.arange(0,T)
-	start = 2
-	a[start:] = 25*tt[start:] + 40
-	return a[t]
-
-def stochNVac_t(nc, t, T):
-	c=10
-	np.random.seed(c)
-	a = np.random.normal(50, 10, size=T)
-	return np.int32(10*nc*t + nc*a[t])
 
 class vaccine_process:
 	def __init__(self, nc, T):
 		c = 10
 		np.random.seed(c)
-		self.a = np.random.normal(500, 100, size=T)
+		self.a = np.random.normal(20, 10, size=T)
 		self.T = T
 		self.nc = nc
 		np.random.seed(None)
 
 	def stoch(self, t):
-		return np.int32(10 * self.nc * t + self.nc * self.a[t]/10)
+		return np.int32(self.nc * t + self.nc * self.a[t]/10)
 
 	def stoch2(self, t):
 		return np.int32(3 * self.nc * t + self.nc * self.a[t]/50)
@@ -119,48 +135,91 @@ class vaccine_process:
 
 	def stoch_USA(self, t):
 		return np.int32(1000 * self.nc * t + self.nc * self.a[t])
+
+
 
 
 class vaccine_process2:
 	def __init__(self, nc, T, N):
 		self.NT = np.sum(N)
-		self.pct = 0.05
+		# 0.01 for NH
+		# 0.05 for USA
+		self.pct = 0.005
 		c = 10
 		np.random.seed(c)
-		self.a = np.random.normal(10, 5, size=T)
+		self.a = np.random.normal(25, 5, size=T)
 		self.T = T
 		self.nc = nc
 		np.random.seed(None)
 
+		self.nvacs = dl.load_data('USA_DATA/nvac_list.obj')
+
+
 	def stoch(self, t):
-		return np.int32(self.pct * self.NT + self.a[t] * t)
+		v = np.int32(self.pct * self.NT + self.a[t] * t)
+		return v
 
 	def stoch2(self, t):
 		return np.int32(3 * self.nc * t + self.nc * self.a[t]/50)
 
 	def const(self, t):
-		return self.nc * 25
+		return self.nc * 50
 
 	def stoch_USA(self, t):
 		return np.int32(1000 * self.nc * t + self.nc * self.a[t])
 
+	def data_vacs(self,t):
+		return self.nvacs[t]
+
+
 class test_process:
-	def __init__(self, nc, T):
+	def __init__(self, nc, T, N):
 		self.T = T
 		self.nc = nc
 		c = 10
+		self.NT = np.sum(N)
+		self.pct = .01
 		np.random.seed(c)
 		self.a = np.random.normal(50, 50, size=T)
 		np.random.seed(None)
+		self.ntest = dl.load_data('USA_DATA/ntest_list.obj')
 
 	def const(self, t):
-		return self.nc * 10
+		return np.int32(self.pct * self.NT)
+
+	def shortage(self, t):
+		return 50
 
 	def const_USA(self, t):
 		return self.nc * 1000
 
 	def stoch_USA(self, t):
 		return np.int32(50 * self.nc * t + self.nc * self.a[t])
+
+	def data_tests(self, t):
+		return self.ntest[t]
+
+
+class test_process2:
+	def __init__(self, nc, T, N):
+		self.T = T
+		self.nc = nc
+		c = 10
+		self.NT = np.sum(N)
+
+	def shortage(self, m):
+		return m
+
+class vaccine_process3:
+	def __init__(self, nc, T, N):
+		self.T = T
+		self.nc = nc
+		c = 10
+		self.NT = np.sum(N)
+
+	def shortage(self, m):
+		return m
+
 
 
 def simplex_projector(y, const):
@@ -306,80 +365,5 @@ class tracker:
 		ax[2].plot(Is[:,z])
 		ax[2].plot(np.cumsum(dIs[:,z]))
 
-
-def USA_plot(costs, T):
-	colorscale = ["#f7fbff", "#ebf3fb", "#deebf7", "#d2e3f3", "#c6dbef", "#b3d2e9", "#9ecae1",
-				  "#85bcdb", "#6baed6", "#57a0ce", "#4292c6", "#3082be", "#2171b5", "#1361a9",
-				  "#08519c", "#0b4083", "#08306b"
-				  ]
-
-	ds = pd.read_csv('USA_DATA/fips_states.csv')
-	codes = ds.ss
-
-	fips = dl.load_data('USA_DATA/state_fips.obj')
-	# In[8,:] = np.max(I)
-	# In[39,:10] = np.min(I)
-	scl = [[0.0, 'rgb(242,240,247)'], [0.2, 'rgb(218,218,235)'], [0.4, 'rgb(188,189,220)'], [0.6, 'rgb(158,154,200)'], [0.8, 'rgb(117,107,177)'], [1.0, 'rgb(84,39,143)']]
-	# set1 = In.copy()
-	# rmin = np.min(set1)
-	# rmax = np.max(set1)
-	# # ik = np.min([rmax*np.ones(set1.shape[0]), np.max([rmin * np.ones(set1.shape[0]), set1], axis=0)], axis=0)
-	# a = 0.9
-	# tmin = rmin
-	# tmax = (1 - a)*rmax
-	# ik = ((set1 - rmin) / (rmax - rmin)) * (tmax-tmin) + tmin
-	# ik = np.max([np.zeros(ik.shape), np.log10(ik)], axis=0)
-	# ik[8,:] = np.log10(np.max(I))
-	# # ik[39,:] = np.max([0, np.log10(np.min(I))])
-	In = np.max([np.zeros(costs.shape), np.log10(costs+10e-6)], axis=0)
-	plotmap = True
-	if plotmap:
-		data_slider = []
-		# norm = matplotlib.colors.Normalize(vmin=np.min(In), vmax=np.max(In))
-		# cmap = matplotlib.cm.get_cmap('GnBu')
-		# median = np.median(In)
-		# color = 'rgb' + str(cmap(norm(median))[0:3])
-		colorbar = dict(tickvals=[1, 2, 3, 4, 5],
-						ticktext=['10', '100', '1000', '10k', '100k'])
-		for t in range(T-1):
-			# set1 = np.max([np.ones(In.shape[0]), np.log10(In[:, t])], axis=0)
-			# set1 = ik[:, t]
-			# rmin = np.min(set1)
-			# rmax = np.max(set1)
-			# # ik = np.min([rmax*np.ones(set1.shape[0]), np.max([rmin * np.ones(set1.shape[0]), set1], axis=0)], axis=0)
-			# a = 0.9
-			# tmin = (1 + (1-a))*rmin
-			# tmax = (1 - a)*rmax
-			# ik = ((set1 - rmin) / (rmax - rmin)) * (tmax-tmin) + tmin
-			# ik = np.log10(ik)
-			data_each_yr = dict(
-				type='choropleth',
-				locations=codes,
-				z=In[:,t],
-				colorbar=colorbar,
-				colorscale="YlOrRd",
-				locationmode='USA-states',
-				zmin=1,
-				zmax= np.log10(np.max(costs)+10e-6)
-				# autocolorscale=True
-			)
-
-			data_slider.append(data_each_yr)
-
-		steps = []
-		for i in range(len(data_slider)):
-			step = dict(method='restyle',
-						args=['visible', [False] * len(data_slider)],
-						label='Day {}'.format(i))
-			step['args'][1][i] = True
-			steps.append(step)
-
-		sliders = [dict(active=0, pad={"t": 1}, steps=steps)]
-
-		layout = dict(title='Virus cases', geo=dict(scope='usa',
-													projection={'type': 'albers usa'}),
-					  sliders=sliders)
-
-		fig2 = dict(data=data_slider, layout=layout)
-		# fig = dict(data=data_slider)
-		offline.plot(fig2)
+def cdate(b):
+	return float(b.strftime("%S")) + float(b.strftime("%f"))/10e5 + 60*(float(b.strftime("%M")) + 60 * float(b.strftime("%H")))

@@ -3,6 +3,8 @@ import gurobipy as gp
 from gurobipy import GRB
 import scipy.stats as stats
 from utility import simplex_projector, simplex_projector_integer
+import matplotlib.pyplot as plt
+
 
 class null_policy:
 	# The null test policy assumes there is an infinite amount of tests
@@ -21,8 +23,38 @@ class null_policy:
 
 	def decision(self, xvac):
 		# xvac was the most recent vaccine decision (not needed for null)
-		N = self.model.N
-		return np.int32(N / self.model.nc)
+		ntest = self.model.state['ntest']
+		even = ntest / self.model.nc
+		while np.sum(even) > ntest:
+			j = np.random.randint(high = self.model.nc)
+			even[j] -= 1
+		return np.int32(even)
+
+class prop_policy:
+	# The null test policy assumes there is an infinite amount of tests
+	def __init__(self, model, params, vacpol):
+		# params is empty
+		# model gives the base model
+		self.model = model
+		self.params = params
+		self.vacpol = vacpol
+
+	def update(self, model, params, vacpol):
+		# params is empty
+		# model updates the base model
+		self.model = model
+		self.vacpol = vacpol
+
+	def decision(self, xvac):
+		# xvac was the most recent vaccine decision (not needed for null)
+		ntest = self.model.state['ntest']
+		N = self.model.state['N']
+		even = ntest * (N / np.sum(N))
+		while np.sum(even) > ntest:
+			j = np.random.randint(high = self.model.nc)
+			even[j] -= 1
+		return np.int32(even)
+
 
 class thompson_sampling:
 	def __init__(self, model, params, vacpol):
@@ -128,7 +160,7 @@ class EI:
 		ntest = self.model.state['ntest']
 		state1 = self.model.state.copy()
 
-		N = np.float32(self.model.state['N'])
+		N = self.model.state['N']
 		pS = self.model.state['pS']
 		pI = self.model.state['pI']
 		pR = self.model.state['pR']
@@ -177,7 +209,7 @@ class EI:
 		m.setObjective(x @ Az @ x + c @ x, GRB.MAXIMIZE)
 
 		M = np.ones(nc)
-		Ntest = np.array([ntest])
+		Ntest = np.array([np.int32(ntest)])
 
 		# Add constraints
 		m.addConstr(M @ x == Ntest, name="c")
@@ -257,7 +289,7 @@ class prop_greedy_trade:
 		m.setObjective(x @ Az @ x + c @ x, GRB.MAXIMIZE)
 
 		M = np.ones(nc)
-		Ntest = np.array([ntest])
+		Ntest = np.int32(np.array([ntest]))
 
 		# Add constraints
 		m.addConstr(M @ x == Ntest, name="c")
@@ -469,8 +501,25 @@ class pure_exploration:
 
 	def decision(self, xvac):
 		ntest = self.model.state['ntest']
-		x0 = np.random.rand(self.model.nc)
+		x0 = np.array([np.random.randint(low=0, high=10000) for _ in range(self.model.nc)])
 		x0 = np.int32(x0 / sum(x0) * ntest)
+		while np.sum(x0) > ntest:
+			j = np.random.randint(high = self.model.nc)
+			x0[j] -= 1
+		return x0
+
+class full_test:
+	def __init__(self, model, params, vacpol):
+		self.model = model
+		self.vacpol = vacpol
+		self.params = params
+
+	def update(self, model_new, params, vacpol):
+		self.model = model_new
+		self.vacpol = vacpol
+
+	def decision(self, xvac):
+		x0 = self.model.N
 		return x0
 
 class REMBO_TS:
@@ -559,3 +608,171 @@ class REMBO_TS:
 			cs.append(c)
 		kstar = np.argmin(cs)
 		return Xtest[:, kstar]
+
+class KGstar:
+	def __init__(self, model, params, vacpol):
+		self.model = model
+		self.vacpol = vacpol
+
+
+
+	def update(self, model_new, params, vacpol):
+		self.model = model_new
+		self.vacpol = vacpol
+
+	def decision(self, xvac):
+		ntest = self.model.state['ntest']
+		N = self.model.state['N']
+		pS = self.model.state['pS']
+		pI = self.model.state['pI']
+		pR = self.model.state['pR']
+		sigmaI = self.model.state['sigmaI']
+		beta = self.model.state['beta']
+		gamma = self.model.state['gamma']
+		eps = 1e-6
+
+		# compute the necessary satistics
+		Sbar = pS * N
+		Ibar = pI * N
+		Rbar = pR * N
+
+		EISx = N * pI * ((N - 1) * pS - xvac)
+		ESI = N * (N - 1) * pI * pS
+		ES2I2 = N * (N - 1) * pI * pS * (1 + (pI + pS) * (N - 2) + pI * pS * (N - 2) * (N - 3))
+		VarSI = ES2I2 - ESI ** 2
+		VarxI = xvac ** 2 * (N * pI * (1 - pI))
+		cov = -2 * xvac * N * (N - 1) * pI * pS * (1 - 2 * pI)
+		VarI = VarSI + VarxI + cov+ eps
+		s = np.sqrt(VarI)
+		mean = EISx
+
+		# E[I S^x]
+		term = (beta / N) * ((EISx) * stats.norm.cdf(mean / s) + s * stats.norm.pdf(mean / s))
+
+		# E[max(0,S-x)] = E[S] - E[min(S,x)]
+		sigma_susc = np.sqrt(N * pS * (1 - pS) + eps)
+		ESx = (Sbar - xvac) * stats.norm.cdf((Sbar - xvac) / sigma_susc) + sigma_susc * stats.norm.pdf(
+			(Sbar - xvac) / sigma_susc)
+		Emin = Sbar - ESx
+
+		# Get the predicted states at t+1
+		Sbar1 = ESx - term
+		Ibar1 = (1 - gamma) * Ibar + term
+		Rbar1 = Rbar + gamma * Ibar + Emin
+
+		fI1 = Ibar/N
+
+		VarpI = VarI / N**2
+
+		betat = np.max([1/sigmaI - 1/VarpI, 1e-10 * np.ones(self.model.nc)], axis=0)
+		nx = np.arange(1,100)
+		sigma_til = np.array([1/betat - 1/(betat + xx * (1/(fI1 * (1-fI1)))) for xx in nx])
+
+		c = []
+		for i in range(self.model.nc):
+			il = list(np.arange(0,self.model.nc))
+			il.pop(i)
+			pnext = np.max(pI[il])
+			c.append(- np.abs(pI[i] - pnext / sigma_til[:,i]))
+
+		f = c * stats.norm.cdf(c, 0, 1) + stats.norm.pdf(c, 0, 1)
+		v = sigma_til * f.T
+		vstar = v / nx.repeat(self.model.nc).reshape(nx.shape[0], self.model.nc)
+
+		xstars = np.argmax(vstar, axis=0)
+		xstars[xstars == 0] = 1
+
+		vstars = np.max(vstar, axis=0)
+
+		ii = np.argsort(vstars)
+		decisions = xstars[ii]
+		dcumul = np.cumsum(decisions)
+		bools = dcumul < ntest
+		decision = np.zeros(self.model.nc)
+		decision[ii[bools]] = xstars[ii[bools]]
+
+		if np.sum(decision) < ntest:
+			leftover = ntest - np.sum(decision)
+			decision += np.int32(leftover / self.model.nc)
+
+		return decision
+
+
+class KGstar_tradeoff:
+	def __init__(self, model, params, vacpol):
+		self.model = model
+		self.vacpol = vacpol
+
+	def update(self, model_new, params, vacpol):
+		self.model = model_new
+		self.vacpol = vacpol
+
+	def decision(self, xvac):
+		ntest = self.model.state['ntest']
+		pcts = self.model.N / sum(self.model.N)
+		xtest = self.pr * ntest * pcts
+
+		ntest1 = np.floor(ntest - np.sum(xtest))
+
+		N = self.model.state['N']
+		pS = self.model.state['pS']
+		pI = self.model.state['pI']
+		pR = self.model.state['pR']
+		sigmaI = self.model.state['sigmaI']
+		beta = self.model.state['beta']
+		gamma = self.model.state['gamma']
+		eps = 1e-6
+
+		# compute the necessary satistics
+		Sbar = pS * N
+		Ibar = pI * N
+		Rbar = pR * N
+
+		EISx = N * pI * ((N - 1) * pS - xvac)
+		ESI = N * (N - 1) * pI * pS
+		ES2I2 = N * (N - 1) * pI * pS * (1 + (pI + pS) * (N - 2) + pI * pS * (N - 2) * (N - 3))
+		VarSI = ES2I2 - ESI ** 2
+		VarxI = xvac ** 2 * (N * pI * (1 - pI))
+		cov = -2 * xvac * N * (N - 1) * pI * pS * (1 - 2 * pI)
+		VarI = VarSI + VarxI + cov+ eps
+		s = np.sqrt(VarI)
+		mean = EISx
+
+		# E[I S^x]
+		term = (beta / N) * ((EISx) * stats.norm.cdf(mean / s) + s * stats.norm.pdf(mean / s))
+
+		# E[max(0,S-x)] = E[S] - E[min(S,x)]
+		sigma_susc = np.sqrt(N * pS * (1 - pS) + eps)
+		ESx = (Sbar - xvac) * stats.norm.cdf((Sbar - xvac) / sigma_susc) + sigma_susc * stats.norm.pdf(
+			(Sbar - xvac) / sigma_susc)
+		Emin = Sbar - ESx
+
+		# Get the predicted states at t+1
+		Sbar1 = ESx - term
+		Ibar1 = (1 - gamma) * Ibar + term
+		Rbar1 = Rbar + gamma * Ibar + Emin
+
+		fI1 = Ibar/N
+
+		VarpI = VarI / N**2
+
+		betat = np.max([1/sigmaI - 1/VarpI, 1e-10 * np.ones(self.model.nc)], axis=0)
+		nx = np.arange(1,100)
+		sigma_til = np.array([1/betat - 1/(betat + xx * (1/(fI1 * (1-fI1)))) + 1e-6 for xx in nx])
+
+		c = []
+		for i in range(self.model.nc):
+			il = list(np.arange(0,self.model.nc))
+			il.pop(i)
+			pnext = np.max(pI[il])
+			c.append(- np.abs(pI[i] - pnext / sigma_til[:,i]))
+
+		f = c * stats.norm.cdf(c, 0, 1) + stats.norm.pdf(c, 0, 1)
+		v = sigma_til * f.T
+		vstar = v / nx.repeat(self.model.nc).reshape(nx.shape[0], self.model.nc)
+
+		xstars = np.argmax(vstar, axis=0) + 1
+		vstars = np.max(vstar, axis=0) + 1e-6
+		decision = xstars / np.sum(xstars) * ntest1
+
+		return decision

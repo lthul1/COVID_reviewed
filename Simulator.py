@@ -25,7 +25,7 @@ class simulator_model:
 		self.test_fun = env_funs[1]
 		# self.tracker = tracker()
 		# self.tracker.update(self.env_state['S'],self.env_state['I'],self.env_state['R'],self.env_state['dI'])
-
+		self.t = 0
 
 
 	def __copy__(self):
@@ -52,9 +52,9 @@ class simulator_model:
 		fn = self.env_state['fn']
 
 		# probability of getting tested given that you are symptomatic
-		c = cc + (xtest / self.env_state['N']) * (1 - cc)
+		c = cc + (xtest / self.env_state['N']) * (0.6 - cc)
 		# probability of getting tested given that you are asymptomatic
-		d = dd + (xtest / self.env_state['N']) * (1 - dd)
+		d = dd + (xtest / self.env_state['N']) * (0.4 - dd)
 
 		# probability of having symptoms
 		v = a * p + b * (1 - p)
@@ -132,6 +132,7 @@ class simulator_model:
 		return np.sum(I1-I)
 
 	def forward_one_step(self, xvac, t):
+		self.t = t
 		self.betahat = self.env_state['beta_'][:,t]
 		self.Movers = self.env_state['Movers'][0]
 		# update nvac value
@@ -140,3 +141,71 @@ class simulator_model:
 		# transition using vaccine decisions
 		return self.trans_function(xvac)
 
+	def getI(self, _):
+		return self.env_state['I'].copy()
+
+	def obs_fun_symptoms(self, xtest):
+		# true percent of population infected
+		p = self.env_state['I'] / self.N
+
+		# probability of having symptoms given that you are positive
+		a = self.env_state['a']
+		# probability of having symptoms given that you are negative
+		b = self.env_state['b']
+		# base probability of getting tested given that you are symptomatic
+		cc = self.env_state['cc']
+		# base prob getting tested given that you are asymptomatic
+		dd = self.env_state['dd']
+		# probability of a false positive test
+		fp = self.env_state['fp']
+		# probability of a false negative test
+		fn = self.env_state['fn']
+
+		# probability of getting tested given that you are symptomatic
+		c = cc + (xtest / self.env_state['N']) * (1 - cc)
+		# probability of getting tested given that you are asymptomatic
+		d = dd + (xtest / self.env_state['N']) * (1 - dd)
+
+		# probability of having symptoms
+		v = a * p + b * (1 - p)
+		# probability of getting tested
+		pT = c * v + d * (1 - v)
+		# probability of being positive and having symptoms
+		n = (a * p) / v
+		# probability of being negative and having symptoms
+		m = (b * (1 - p)) / v
+
+		# probability of wanting a test given that you are positive
+		g = a * c + (1 - a) * d
+		h = b * c + (1 - b) * d
+
+		pa = g * p / pT
+
+		# probability of testing positive given that you are tested
+		pt = (1 - fn) * pa + (fp) * (1 - pa)
+		# probability of testing negative given that you are tested
+		nt = 1 - pt
+
+		l2 = h - g
+		l3 = (1 - fn - fp) * g * xtest - fp * xtest * (h - g)
+		l0 = h
+		l1 = -fp * xtest * h
+
+		Dsymp = np.random.binomial(self.N, c)
+		Dasymp = np.random.binomial(self.N, d)
+		D = Dsymp + Dasymp
+
+		xsymp = np.floor(xtest/2)
+		xasymp = xtest - xsymp
+
+		Nsymp = np.min([Dsymp, xsymp], axis=0)
+		Nasymp = np.min([Dasymp, xasymp], axis=0)
+
+		Isymp = np.random.binomial(Nsymp, n)
+		Iasymp = np.random.binomial(Nasymp, m)
+
+		I = Isymp + Iasymp
+
+		xtest = np.int32(xtest)
+		Ihat = np.random.binomial(xtest, pt)
+		return Ihat
